@@ -9,8 +9,27 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.141.1",
+    "google-cloud-firestore>=2.30.0",
+    "pinecone>=10.0.0",
+    "psutil>=7.2.2",
+    "pymongo>=4.18.0",
+    "python-dotenv>=1.2.3",
+    "redis>=8.1.0",
 ]
 
-[build-system]
-requires = ["uv_build>=0.12.10,<0.13.0"]
-build-backend = "uv_build"
+[tool.uv]
+# Application, not a distributable package: `src` is the import root.
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# Btest = component/logic tests, Ptest = product tests that drive the routes.
+pythonpath = ["src"]
+testpaths = ["Btest", "Ptest"]
+python_files = ["*Test.py"]
+python_classes = ["Test*"]
+python_functions = ["test*"]

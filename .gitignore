@@ -12,6 +12,10 @@ wheels/
 # Env files
 .env
 
+# Service account keys and other credentials
+keys/
+*.pem
+
 # Editors
 .vscode/
 .idea/
