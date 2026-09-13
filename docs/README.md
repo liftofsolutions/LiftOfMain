@@ -7,6 +7,7 @@ What is in this repository, how it is put together, and why.
 | [architecture.md](architecture.md) | Layout, import root, component pattern, naming and platform rules |
 | [serverDetails.md](serverDetails.md) | The `/health` and `/status` endpoints - full field reference and design decisions |
 | [dbAdapters.md](dbAdapters.md) | The database adapter package: two contracts, four stores, what ACID means in each |
+| [llm.md](llm.md) | Chat model per role: LLM config, system prompts |
 | [testing.md](testing.md) | The Btest / Ptest split, how to write each, how to run them |
 
 `CLAUDE.md` at the repo root is the short, enforceable version of the same rules,
@@ -17,7 +18,7 @@ are the longer explanation behind it.
 
 `rag` is a FastAPI service, Python 3.12, dependencies managed with **uv**.
 
-Two things exist so far:
+Three things exist so far:
 
 1. **`serverDetails`** - operational endpoints. `/health` returns the machine's
    CPU, memory, disk, network and process vitals plus a verdict on whether the
@@ -25,6 +26,9 @@ Two things exist so far:
 2. **`DbAdapters`** - one async CRUD surface over Pinecone, MongoDB, Firestore and
    Redis, so the store behind a caller can be swapped without touching the
    caller.
+3. **`LLM`** - one chat model per role (reviewer, chunker, summarizer,
+   ragResponseEvaluator, chatAgent), with its provider, model, settings and
+   system prompt.
 
 The retrieval-augmented-generation logic the project is named for is not written
 yet. What is here is the groundwork: the storage layer it will read and write

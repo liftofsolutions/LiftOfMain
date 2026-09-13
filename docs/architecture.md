@@ -20,6 +20,11 @@ Rag/
       firestoreAdapter.py
       redisAdapter.py
       pineconeAdapter.py
+    LLM/                       # chat model per role (no routes)
+      __init__.py
+      agentChatModel.py        # ChatModel + buildChatModel
+      configLLM.json           # provider -> model -> settings
+      systemPrompt.json        # role -> provider -> model -> prompt
   Btest/                       # component / logic tests
     serverDetails/ServerDetailsTest.py
   Ptest/                       # product tests (routes end to end) - not written yet
@@ -96,7 +101,10 @@ Enforced by `.claude/skills/naming-conventions/SKILL.md`:
 - **UPPER_SNAKE_CASE** - module-level globals and constants (`MAX_RETRIES`,
   `CPU_WARNING_PERCENT`)
 
-No snake_case anywhere else. Component folders are camelCase (`serverDetails`);
+No snake_case anywhere else, strictly. Names are simple and descriptive, and
+no line passes **80 characters**, in code or in the JSON files beside it.
+
+Component folders are camelCase (`serverDetails`);
 `DbAdapters` is PascalCase because it reads as a package of classes.
 
 Test names follow from the same rule: `TestPascalCase` classes with

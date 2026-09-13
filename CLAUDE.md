@@ -27,12 +27,17 @@ Everything written here must run on both:
 - Anything platform-dependent gets tested for both Windows and Linux by patching
   `os.name`, not by skipping the test on the other platform.
 
-## Naming
+## Naming and style
 
 See `.claude/skills/naming-conventions/SKILL.md`. In short: **camelCase** for
 locals, functions, methods and parameters; **PascalCase** for classes;
 **UPPER_SNAKE_CASE** for module-level globals and constants. No snake_case
-anywhere else.
+anywhere else. This is strict.
+
+- Names are simple and descriptive: `buildChatModel`, `systemPrompt`, not
+  `bcm` or `spData`.
+- **Max 80 characters per line**, in code and in the JSON files beside it.
+- Keep it simple: write exactly the logic asked for, nothing extra.
 
 ## Code layout
 
@@ -65,6 +70,10 @@ Rules:
 - `schemas.py` holds the pydantic models. Every route declares a `response_model`.
 - Register a new component in `main.py` with
   `app.include_router(<componentName>Router)`.
+
+Shared logic with no endpoints (`config/`, `LLM/`) skips `routes.py` and
+`schemas.py`. `LLM/` builds one chat model per role from `configLLM.json` and
+`systemPrompt.json` - see `docs/llm.md`.
 
 ## Testing
 

@@ -15,3 +15,8 @@ All identifiers in this project use **camelCase**, except global variables, whic
 - Global / module-level variables and constants: market-standard PEP8 style, i.e. `UPPER_SNAKE_CASE` (e.g. `MAX_RETRIES`, `DEFAULT_TIMEOUT`)
 
 Do not use snake_case for anything except global constants/variables. Do not mix styles within the same category.
+
+This is strict. On top of it:
+
+- Names are simple and descriptive (`buildChatModel`, `systemPrompt`), never abbreviated (`bcm`, `sp`).
+- Max 80 characters per line in code and in the JSON files beside it.
