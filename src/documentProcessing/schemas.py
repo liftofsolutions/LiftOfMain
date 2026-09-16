@@ -2,47 +2,81 @@
 
 from pydantic import BaseModel, Field
 
+DEFAULT_COUNTRY = "all"
+
+
+class CreateRagDatabaseRequest(BaseModel):
+    """A new rag database, reserved under a project."""
+
+    projectId: str = Field(description="Project the rag database belongs to.")
+
+
+class CreateRagDatabaseResponse(BaseModel):
+    """Acknowledgement that a rag database id was reserved."""
+
+    ragDbId: str
+    projectId: str
+    createdAt: str
+
 
 class SubmitDocumentRequest(BaseModel):
-    """A document handed in for ingestion, addressed by its account and project."""
+    """A document handed in for ingestion under an existing rag database."""
 
-    accountUuid: str = Field(description="Account the project belongs to.")
-    projectId: str = Field(description="Project the document belongs to.")
-    documentLink: str = Field(description="Location the document can be fetched from.")
-
-
-class DeleteDocumentRequest(BaseModel):
-    """A document to be removed again from a project."""
-
-    projectId: str = Field(description="Project the document belongs to.")
-    documentLink: str = Field(description="Location of the document that was ingested.")
+    ragDbId: str = Field(description="Rag database the document belongs to.")
+    documentLink: str = Field(
+        description="Location the document can be fetched from."
+    )
+    country: str = Field(
+        default=DEFAULT_COUNTRY,
+        description='Country this rag serves; "all" applies to every country.',
+    )
+    metadata: dict = Field(
+        default_factory=dict,
+        description="Container for any extra metadata, open for future use.",
+    )
 
 
 class SubmitDocumentResponse(BaseModel):
-    """Acknowledgement that a document was taken in for processing."""
+    """Acknowledgement that a document was queued for processing."""
 
+    jobId: str
+    ragDbId: str
     status: str
-    message: str
-    accountUuid: str
-    projectId: str
-    documentLink: str
-    timestamp: str
+    createdAt: str
 
 
-class DeleteDocumentResponse(BaseModel):
-    """Acknowledgement that a document was taken out of a project."""
+class FileMetadata(BaseModel):
+    """What one file in a submitted document is made of."""
 
-    status: str
-    message: str
-    projectId: str
-    documentLink: str
-    timestamp: str
+    fileName: str
+    fileFormat: str
+    sizeBytes: int
+    lineCount: int | None = None
+    wordCount: int | None = None
+    characterCount: int | None = None
+    tokenCount: int | None = None
+    tableCount: int | None = None
+    notes: str = ""
+    extra: dict = Field(
+        default_factory=dict,
+        description="Format specific metadata, open for future additions.",
+    )
 
 
 class JobStatusResponse(BaseModel):
-    """Where a submitted document has got to in the pipeline."""
+    """Where a submitted document's processing job has got to."""
 
-    status: str
-    message: str
     jobId: str
-    timestamp: str
+    ragDbId: str
+    status: str
+    createdAt: str
+    updatedAt: str
+    fileCount: int | None = Field(
+        default=None, description="Files found, once processing has finished."
+    )
+    filesMetadata: list[FileMetadata] | None = Field(
+        default=None, description="Per file metadata, once collected."
+    )
+    error: str | None = Field(
+        default=None, description="Why the job failed, when it did."
+    )
