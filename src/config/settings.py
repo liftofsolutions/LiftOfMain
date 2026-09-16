@@ -41,6 +41,7 @@ GOOGLE_CREDENTIALS_ENV_VAR = "GOOGLE_APPLICATION_CREDENTIALS"
 REDIS_URL_ENV_VAR = "REDIS_URL"
 MONGODB_URI_ENV_VAR = "MONGODB_URI"
 MONGODB_DATABASE_ENV_VAR = "MONGODB_DATABASE"
+UNRAR_TOOL_ENV_VAR = "RAG_UNRAR_TOOL"
 
 # Firestore reserves "(default)" for a project's unnamed database. This project's
 # database is *named* "default", which is a different thing and only resolves
@@ -75,6 +76,7 @@ class Settings:
     redisUrl: str = ""
     mongoUri: str = ""
     mongoDatabase: str = ""
+    unrarTool: str = ""
 
     @property
     def hasPinecone(self) -> bool:
@@ -160,6 +162,7 @@ def getSettings() -> Settings:
         redisUrl=os.environ.get(REDIS_URL_ENV_VAR, ""),
         mongoUri=os.environ.get(MONGODB_URI_ENV_VAR, ""),
         mongoDatabase=os.environ.get(MONGODB_DATABASE_ENV_VAR, ""),
+        unrarTool=os.environ.get(UNRAR_TOOL_ENV_VAR, ""),
     )
 
 

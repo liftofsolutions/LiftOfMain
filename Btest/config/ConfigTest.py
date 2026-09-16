@@ -33,6 +33,7 @@ CONFIG_ENV_VARS = [
     "REDIS_URL",
     "MONGODB_URI",
     "MONGODB_DATABASE",
+    "RAG_UNRAR_TOOL",
 ]
 
 
