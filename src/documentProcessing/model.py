@@ -5,44 +5,21 @@ from pydantic import BaseModel, Field
 DEFAULT_COUNTRY = "all"
 
 
-class CreateRagDatabaseRequest(BaseModel):
-    """A new rag database, reserved under a project."""
+class CreateJobResponse(BaseModel):
+    """Acknowledgement that a job id was opened under a project."""
 
-    projectId: str = Field(description="Project the rag database belongs to.")
-
-
-class CreateRagDatabaseResponse(BaseModel):
-    """Acknowledgement that a rag database id was reserved."""
-
-    ragDbId: str
+    jobId: str
     projectId: str
+    status: str
     createdAt: str
-
-
-class SubmitDocumentRequest(BaseModel):
-    """A document handed in for ingestion under an existing rag database."""
-
-    ragDbId: str = Field(description="Rag database the document belongs to.")
-    documentLink: str = Field(
-        description="Location the document can be fetched from."
-    )
-    country: str = Field(
-        default=DEFAULT_COUNTRY,
-        description='Country this rag serves; "all" applies to every country.',
-    )
-    metadata: dict = Field(
-        default_factory=dict,
-        description="Container for any extra metadata, open for future use.",
-    )
 
 
 class SubmitDocumentResponse(BaseModel):
     """Acknowledgement that a document was queued for processing."""
 
     jobId: str
-    ragDbId: str
     status: str
-    createdAt: str
+    message: str
 
 
 class FileMetadata(BaseModel):
