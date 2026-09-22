@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from serverDetails import service
-from serverDetails.schemas import HealthResponse, StatusResponse
+from serverDetails.model import HealthResponse, StatusResponse
 
 router = APIRouter(tags=["server details"])
 

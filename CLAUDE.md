@@ -58,7 +58,7 @@ src/
     __init__.py
     routes.py                  # APIRouter + thin handlers that only call service
     service.py                 # all the logic; no FastAPI imports
-    schemas.py                 # pydantic request/response models
+    model.py                   # pydantic request/response models
 ```
 
 Rules:
@@ -67,12 +67,12 @@ Rules:
   handler.
 - `service.py` must be importable and fully testable without FastAPI. Keep it free
   of `Request`, `HTTPException` and other framework types.
-- `schemas.py` holds the pydantic models. Every route declares a `response_model`.
+- `model.py` holds the pydantic models. Every route declares a `response_model`.
 - Register a new component in `main.py` with
   `app.include_router(<componentName>Router)`.
 
 Shared logic with no endpoints (`config/`, `LLM/`) skips `routes.py` and
-`schemas.py`. `LLM/` builds one chat model per role from `configLLM.json` and
+`model.py`. `LLM/` builds one chat model per role from `configLLM.json` and
 `systemPrompt.json` - see `docs/llm.md`.
 
 ## Testing

@@ -1,7 +1,7 @@
 """Where this service's configuration comes from, resolved once at import.
 
 Not a route component - there is nothing to expose over HTTP here - so this
-folder has no `routes.py` or `schemas.py`. It sits under `src/` because every
+folder has no `routes.py` or `model.py`. It sits under `src/` because every
 component needs it and nothing should reach past it to `os.environ` directly.
 
 Two jobs:

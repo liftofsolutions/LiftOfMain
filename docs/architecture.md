@@ -10,7 +10,7 @@ Rag/
       __init__.py
       routes.py                # APIRouter, thin handlers
       service.py               # the logic, no FastAPI imports
-      schemas.py               # pydantic response models
+      model.py                 # pydantic response models
     DbAdapters/                # a component (library shaped)
       __init__.py              # the package's public surface
       base.py                  # what every adapter shares
@@ -80,7 +80,7 @@ Inside a component:
 | --- | --- | --- |
 | `routes.py` | `APIRouter`, path declarations, `response_model` | contain logic - handlers delegate immediately |
 | `service.py` | all the logic | import FastAPI, or touch `Request` / `HTTPException` |
-| `schemas.py` | pydantic request/response models | contain behaviour |
+| `model.py` | pydantic request/response models | contain behaviour |
 
 The rule that carries the most weight is the second: **`service.py` must be
 importable and fully exercisable without FastAPI.** That is what makes a Btest

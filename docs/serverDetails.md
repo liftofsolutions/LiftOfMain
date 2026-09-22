@@ -6,7 +6,7 @@ Operational endpoints: is the server up, and is it in trouble.
 src/serverDetails/
   routes.py     GET /health, GET /status
   service.py    collection and assessment logic
-  schemas.py    response models
+  model.py      response models
 ```
 
 `routes.py` does nothing but delegate - `collectServerVitals()` and

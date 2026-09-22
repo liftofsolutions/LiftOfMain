@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from serverDetails import service
-from serverDetails.schemas import HealthResponse, StatusResponse
+from serverDetails.model import HealthResponse, StatusResponse
 
 # Baseline values that sit comfortably below every threshold, so a test only has
 # to override the one field it is actually exercising.

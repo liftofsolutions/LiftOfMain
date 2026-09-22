@@ -6,8 +6,9 @@ A job is keyed by jobId and carries the account and project that opened it,
 so a project can own many of them: one per country, or one shared under the
 default country, `DEFAULT_COUNTRY`.
 
-Only creation lives here for now; submission, the job runner and status
-reads are still to be written.
+Creating a job only reserves its id. Submitting one hands it the document
+and puts it on the `JobManager`, which runs at most five at a time and owns
+everything that happens after that; status reads are still to be written.
 """
 
 import logging
@@ -15,6 +16,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from documentProcessing import store
+from jobManager import JOB_STATUS_QUEUED, getJobManager
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,11 +34,9 @@ DEFAULT_COUNTRY = "all"
 # opened and never submitted does not linger.
 JOB_TTL = timedelta(minutes=20)
 
+# What a job is before it has been submitted anything to work on. Every
+# status after this one is the job manager's, and a `Job` writes it itself.
 JOB_STATUS_CREATED = "created"
-JOB_STATUS_QUEUED = "queued"
-JOB_STATUS_PROCESSING = "processing"
-JOB_STATUS_COMPLETED = "completed"
-JOB_STATUS_FAILED = "failed"
 
 
 class RagDatabaseNotFoundError(LookupError):
@@ -98,4 +98,66 @@ async def createRagDatabase(accountUuid: str, projectId: str) -> dict:
         "projectId": projectId,
         "status": JOB_STATUS_CREATED,
         "createdAt": createdAt,
+    }
+
+
+async def submitDocument(
+    accountUuid: str,
+    projectId: str,
+    jobId: str,
+    documentLink: str,
+    country: str | None,
+    metadata: dict,
+) -> dict:
+    """Hand `jobId` its document and put it on the job manager.
+
+    The job has to exist first - `createRagDatabase` opens it - so a jobId
+    this account's project never opened gets a logged `{"error": ...}` back
+    and nothing is queued. Otherwise the job data is stored, the job is
+    scheduled, and this returns without waiting for it to run.
+
+    Nothing in the reply depends on the stored record having reached
+    Firestore, so the job data is written to memory and mirrored in the
+    background rather than costing the caller a network round trip.
+    """
+
+    jobsPath = JOBS_PATH.format(
+        accountUuid=accountUuid, projectId=projectId
+    )
+    stored = store.fetchRecord(jobsPath, jobId)
+    if stored is None:
+        message = (
+            f"Account {accountUuid!r} has no job {jobId!r} under project "
+            f"{projectId!r}."
+        )
+        LOGGER.error(message)
+        return {"error": message}
+
+    jobData = {
+        "documentLink": documentLink,
+        "country": country or DEFAULT_COUNTRY,
+        "metadata": metadata,
+    }
+    store.writeRecordSoon(
+        jobsPath,
+        jobId,
+        {
+            **stored,
+            "jobData": jobData,
+            "status": JOB_STATUS_QUEUED,
+            "updatedAt": utcNow().isoformat(),
+        },
+    )
+
+    # The job is told where its record lives; the record itself has no use
+    # for a path that is its own address.
+    getJobManager().createJob(
+        jobId, {**jobData, "jobsPath": jobsPath}, ttl=JOB_TTL
+    )
+    LOGGER.info("Submitted job %s with %s.", jobId, jobData)
+
+    return {
+        "jobId": jobId,
+        "status": JOB_STATUS_QUEUED,
+        "message": "Job submitted successfully.",
     }

@@ -2,7 +2,7 @@
 
 `src/LLM/` gives each role its own chat model: role, provider, model,
 settings and system prompt, in one object. Like `config/` it is shared logic,
-not a route component, so it has no `routes.py` or `schemas.py`.
+not a route component, so it has no `routes.py` or `model.py`.
 
 | File | Holds |
 | --- | --- |
