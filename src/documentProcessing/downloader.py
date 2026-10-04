@@ -25,7 +25,7 @@ from urllib.parse import unquote, urlparse
 import httpx
 import rarfile
 
-from config import getSettings
+from config import getServerConfig
 
 # Formats whose metadata `documentFiles` knows how to collect.
 DOCUMENT_FORMATS = frozenset({".pdf", ".doc", ".docx", ".txt", ".md"})
@@ -182,7 +182,7 @@ def expandArchive(loadedFile: LoadedFile) -> list[LoadedFile]:
         with zipfile.ZipFile(loadedFile.openStream()) as archive:
             return readMembers(archive, loadedFile.fileName)
 
-    unrarTool = getSettings().unrarTool
+    unrarTool = getServerConfig().unrarTool
     if unrarTool:
         rarfile.UNRAR_TOOL = unrarTool
     with rarfile.RarFile(loadedFile.openStream()) as archive:

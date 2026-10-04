@@ -3,8 +3,8 @@ role x provider combination.
 
 Unlike the other Btests this one calls the providers for real, so it
 needs `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` and `GEMINI_API_KEY` in
-`.env`. Only the cheapest model of each provider is used, crossed with
-every role in `systemPrompt.json`. Each response is logged whole:
+`test.env`. Only the cheapest model of each provider is used, crossed
+with every role in `systemPrompt.json`. Each response is logged whole:
 
     uv run pytest Btest/LLM -q --log-cli-level=INFO
 """

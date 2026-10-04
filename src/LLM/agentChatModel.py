@@ -12,7 +12,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from config import loadEnvironment
+from config import getServerConfig
 
 LLM_DIR = Path(__file__).resolve().parent
 DEFAULT_KEY = "default"
@@ -71,14 +71,17 @@ def buildChatModel(role: str, provider: str, model: str) -> ChatModel:
         KeyError: If the provider or model is not in `configLLM.json`, or
             the role is not in `systemPrompt.json`.
     """
-    # Provider packages read their API key from the environment on build.
-    loadEnvironment()
     settings = CONFIG_LLM[provider][model]
+    apiKey = getServerConfig().llmApiKeys.get(provider)
+    # Without a configured key the provider falls back to its own lookup.
+    keyArgs = {"api_key": apiKey} if apiKey else {}
     return ChatModel(
         role=role,
         provider=provider,
         model=model,
         settings=settings,
         systemPrompt=getSystemPrompt(role, provider, model),
-        llm=init_chat_model(model, model_provider=provider, **settings),
+        llm=init_chat_model(
+            model, model_provider=provider, **settings, **keyArgs
+        ),
     )

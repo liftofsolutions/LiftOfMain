@@ -65,6 +65,7 @@ Roles: `reviewer`, `chunker`, `summarizer`, `ragResponseEvaluator`,
 
 ## API keys
 
-Loaded from `.env` by `config.loadEnvironment`, then read by each provider
-package under its own name: `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`,
-`GEMINI_API_KEY`, `XAI_API_KEY`.
+Read through `config.getServerConfig().llmApiKeys` - the real environment
+first, then `server.env` / `test.env` (per `RAG_ENV`) - and passed to the
+provider as `api_key`:
+`OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`.

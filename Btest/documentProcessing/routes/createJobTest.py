@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from config import getSettings
+from config import getServerConfig
 from documentProcessing import service, store
 
 LOGGER = logging.getLogger(__name__)
@@ -122,7 +122,7 @@ async def runCreateFlow() -> CreateOutcome:
 @pytest.fixture(scope="module")
 def createOutcome() -> CreateOutcome:
     """The flow, run once against Firestore for every test in this module."""
-    if not getSettings().hasFirestore:
+    if not getServerConfig().hasFirestore:
         pytest.skip("Firestore is not configured for this environment.")
     return asyncio.run(runCreateFlow())
 

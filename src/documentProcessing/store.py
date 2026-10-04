@@ -17,7 +17,7 @@ import asyncio
 import logging
 from typing import Any
 
-from config import buildFirestoreAdapter, getSettings
+from config import buildFirestoreAdapter, getServerConfig
 from DbAdapters import Document, FirestoreAdapter
 
 LOGGER = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ _MIRROR_TASKS: set[asyncio.Task] = set()
 
 def isFirestoreConfigured() -> bool:
     """Whether Firestore is configured well enough to mirror writes to it."""
-    return getSettings().hasFirestore
+    return getServerConfig().hasFirestore
 
 
 async def getAdapter() -> FirestoreAdapter:

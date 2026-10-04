@@ -1,9 +1,9 @@
 """Btest for the config component.
 
 Logic only: every test controls the environment directly and checks what
-`getSettings` makes of it. Nothing here reads the real `.env`, opens a
-connection or touches a database - `loadEnvironment` is stubbed out in the
-fixture so a developer's own `.env` cannot change the result.
+`getServerConfig` makes of it. Nothing here reads a real env file, opens a
+connection or touches a database - `readEnvFile` is stubbed out in the
+fixture so a developer's own env file cannot change the result.
 """
 
 import os
@@ -11,13 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from config import settings as configModule
-from config.settings import (
+from config import serverConfig as configModule
+from config.serverConfig import (
     DEFAULT_FIRESTORE_DATABASE_ID,
     PROJECT_ROOT,
     ConfigurationError,
-    Settings,
-    getSettings,
+    ServerConfig,
+    getEnvFilePath,
+    getServerConfig,
     resolveCredentialsPath,
 )
 
@@ -34,29 +35,39 @@ CONFIG_ENV_VARS = [
     "MONGODB_URI",
     "MONGODB_DATABASE",
     "RAG_UNRAR_TOOL",
+    "OPENAI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "GEMINI_API_KEY",
+    "XAI_API_KEY",
+    "RAG_ENV",
 ]
 
 
 @pytest.fixture
 def cleanEnvironment(monkeypatch):
-    """An empty configuration environment, with `.env` loading disabled.
+    """An empty configuration environment, with an empty env file.
 
-    `getSettings` caches, so the cache is cleared either side of the test: once
-    so this test does not inherit an earlier one's snapshot, once so it does not
-    leave its own behind.
+    `getServerConfig` caches, so the cache is cleared either side of the
+    test: once so this test does not inherit an earlier one's snapshot, once
+    so it does not leave its own behind.
     """
-    monkeypatch.setattr(configModule, "loadEnvironment", lambda: False)
+    monkeypatch.setattr(configModule, "readEnvFile", lambda: {})
     for envVarName in CONFIG_ENV_VARS:
         monkeypatch.delenv(envVarName, raising=False)
-    getSettings.cache_clear()
+    getServerConfig.cache_clear()
     yield monkeypatch
-    getSettings.cache_clear()
+    getServerConfig.cache_clear()
 
 
 def buildEnvironment(monkeypatch, **values) -> None:
     """Set the named configuration variables and nothing else."""
     for envVarName, value in values.items():
         monkeypatch.setenv(envVarName, value)
+
+
+def buildEnvFile(monkeypatch, **values) -> None:
+    """Make the env file hold exactly the named variables."""
+    monkeypatch.setattr(configModule, "readEnvFile", lambda: dict(values))
 
 
 class TestResolveCredentialsPath:
@@ -87,7 +98,7 @@ class TestResolveCredentialsPath:
         assert Path(resolved).is_absolute()
 
 
-class TestSettingsFromEnvironment:
+class TestServerConfigFromEnvironment:
     """What the component makes of the variables this project actually sets."""
 
     def testProjectVariableNamesAreTranslated(self, cleanEnvironment):
@@ -100,14 +111,14 @@ class TestSettingsFromEnvironment:
             REDIS_URL="redis://localhost:6379/0",
         )
 
-        settings = getSettings()
+        serverConfig = getServerConfig()
 
         # The adapters spell these GOOGLE_CLOUD_PROJECT / FIRESTORE_DATABASE;
         # this project spells them its own way and the gap closes here.
-        assert settings.gcpProjectId == "chatbot-9b8d3"
-        assert settings.firestoreDatabaseId == "default"
-        assert settings.pineconeIndexName == "rag-chunks"
-        assert settings.redisUrl == "redis://localhost:6379/0"
+        assert serverConfig.gcpProjectId == "chatbot-9b8d3"
+        assert serverConfig.firestoreDatabaseId == "default"
+        assert serverConfig.pineconeIndexName == "rag-chunks"
+        assert serverConfig.redisUrl == "redis://localhost:6379/0"
 
     def testNamedDefaultDatabaseIsNotTheUnnamedOne(self, cleanEnvironment):
         # This project's database is *named* "default". Firestore reserves
@@ -115,44 +126,116 @@ class TestSettingsFromEnvironment:
         # database - collapsing them would read from the wrong place.
         buildEnvironment(cleanEnvironment, FIRESTORE_DATABASE_ID="default")
 
-        assert getSettings().firestoreDatabaseId == "default"
-        assert getSettings().firestoreDatabaseId != DEFAULT_FIRESTORE_DATABASE_ID
+        assert getServerConfig().firestoreDatabaseId == "default"
+        databaseId = getServerConfig().firestoreDatabaseId
+        assert databaseId != DEFAULT_FIRESTORE_DATABASE_ID
 
     def testUnsetDatabaseIdFallsBackToFirestoresOwnDefault(self, cleanEnvironment):
-        assert getSettings().firestoreDatabaseId == DEFAULT_FIRESTORE_DATABASE_ID
+        databaseId = getServerConfig().firestoreDatabaseId
+        assert databaseId == DEFAULT_FIRESTORE_DATABASE_ID
 
     def testCredentialsPathIsResolvedAndPublishedBackToTheEnvironment(self, cleanEnvironment):
         buildEnvironment(
             cleanEnvironment, GOOGLE_APPLICATION_CREDENTIALS="keys/service-account.json"
         )
 
-        settings = getSettings()
+        serverConfig = getServerConfig()
 
-        assert Path(settings.googleCredentialsPath).is_absolute()
+        assert Path(serverConfig.googleCredentialsPath).is_absolute()
         # google-auth reads the variable itself, so anything in this process
         # building its own client has to see the same absolute path.
-        assert os.environ["GOOGLE_APPLICATION_CREDENTIALS"] == settings.googleCredentialsPath
+        assert (
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+            == serverConfig.googleCredentialsPath
+        )
 
     def testMissingValuesAreEmptyRatherThanAnImportTimeFailure(self, cleanEnvironment):
-        settings = getSettings()
+        serverConfig = getServerConfig()
 
-        assert settings == Settings()
-        assert settings.pineconeApiKey == ""
-        assert settings.mongoUri == ""
+        assert serverConfig == ServerConfig()
+        assert serverConfig.pineconeApiKey == ""
+        assert serverConfig.mongoUri == ""
 
-    def testSettingsAreCachedUntilExplicitlyCleared(self, cleanEnvironment):
+    def testServerConfigIsCachedUntilExplicitlyCleared(self, cleanEnvironment):
         buildEnvironment(cleanEnvironment, GCP_PROJECT_ID="first")
-        assert getSettings().gcpProjectId == "first"
+        assert getServerConfig().gcpProjectId == "first"
 
         buildEnvironment(cleanEnvironment, GCP_PROJECT_ID="second")
-        assert getSettings().gcpProjectId == "first", "the snapshot must not drift mid-process"
+        assert getServerConfig().gcpProjectId == "first", (
+            "the snapshot must not drift mid-process"
+        )
 
-        getSettings.cache_clear()
-        assert getSettings().gcpProjectId == "second"
+        getServerConfig.cache_clear()
+        assert getServerConfig().gcpProjectId == "second"
 
-    def testSettingsAreFrozen(self, cleanEnvironment):
+    def testServerConfigIsFrozen(self, cleanEnvironment):
         with pytest.raises(Exception):
-            getSettings().gcpProjectId = "rewritten"
+            getServerConfig().gcpProjectId = "rewritten"
+
+
+class TestEnvironmentThenEnvFile:
+    """The environment is read first; the env file only fills what it lacks."""
+
+    def testEnvFileIsUsedWhenTheEnvironmentLacksAValue(
+        self, cleanEnvironment
+    ):
+        buildEnvFile(cleanEnvironment, REDIS_URL="redis://fromfile:6379/0")
+
+        assert getServerConfig().redisUrl == "redis://fromfile:6379/0"
+
+    def testEnvironmentWinsOverEnvFile(self, cleanEnvironment):
+        buildEnvironment(cleanEnvironment, REDIS_URL="redis://fromenv:6379/0")
+        buildEnvFile(cleanEnvironment, REDIS_URL="redis://fromfile:6379/0")
+
+        assert getServerConfig().redisUrl == "redis://fromenv:6379/0"
+
+    def testEnvFileIsNotCopiedIntoTheEnvironment(self, cleanEnvironment):
+        buildEnvFile(cleanEnvironment, REDIS_URL="redis://fromfile:6379/0")
+
+        getServerConfig()
+
+        assert "REDIS_URL" not in os.environ
+
+    def testLlmApiKeysAreReadPerProvider(self, cleanEnvironment):
+        buildEnvironment(cleanEnvironment, OPENAI_API_KEY="openai-env")
+        buildEnvFile(
+            cleanEnvironment,
+            OPENAI_API_KEY="openai-file",
+            GEMINI_API_KEY="gemini-file",
+        )
+
+        assert getServerConfig().llmApiKeys == {
+            "openai": "openai-env",
+            "google_genai": "gemini-file",
+        }
+
+
+class TestEnvFileSelection:
+    """`RAG_ENV` chooses between the server's and the tests' variables."""
+
+    @pytest.mark.parametrize(
+        "runEnv, expectedFileName",
+        [
+            (None, "server.env"),
+            ("server", "server.env"),
+            ("test", "test.env"),
+        ],
+    )
+    def testRunEnvPicksTheFile(
+        self, cleanEnvironment, runEnv, expectedFileName
+    ):
+        if runEnv:
+            buildEnvironment(cleanEnvironment, RAG_ENV=runEnv)
+
+        assert getEnvFilePath() == PROJECT_ROOT / expectedFileName
+
+    def testUnknownRunEnvIsRejected(self, cleanEnvironment):
+        buildEnvironment(cleanEnvironment, RAG_ENV="staging")
+
+        with pytest.raises(ConfigurationError) as raised:
+            getEnvFilePath()
+
+        assert "RAG_ENV" in str(raised.value)
 
 
 class TestConfiguredFlags:
@@ -200,13 +283,13 @@ class TestConfiguredFlags:
     ):
         buildEnvironment(cleanEnvironment, **environment)
 
-        settings = getSettings()
+        serverConfig = getServerConfig()
 
         assert {
-            "pinecone": settings.hasPinecone,
-            "firestore": settings.hasFirestore,
-            "redis": settings.hasRedis,
-            "mongo": settings.hasMongo,
+            "pinecone": serverConfig.hasPinecone,
+            "firestore": serverConfig.hasFirestore,
+            "redis": serverConfig.hasRedis,
+            "mongo": serverConfig.hasMongo,
         } == expectedFlags
 
 

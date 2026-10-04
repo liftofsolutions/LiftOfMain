@@ -6,8 +6,11 @@ component needs it and nothing should reach past it to `os.environ` directly.
 
 Two jobs:
 
-1. **Load `.env`.** Nothing else does. Values already in the real environment win,
-   so a container's own configuration is never overwritten by a stray file.
+1. **Read each value.** The real environment first; when a variable is not set
+   there, the env file. `RAG_ENV` picks that file: `server` (the default)
+   reads `server.env`, `test` reads `test.env`. A container's own
+   configuration is never overridden by a stray file, and no file is copied
+   into `os.environ`.
 2. **Translate.** The adapters in `DbAdapters` name their environment variables
    generically (`GOOGLE_CLOUD_PROJECT`, `FIRESTORE_DATABASE`), while this project
    spells them its own way (`GCP_PROJECT_ID`, `FIRESTORE_DATABASE_ID`). The
@@ -20,17 +23,25 @@ outlives the request.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 from DbAdapters import FirestoreAdapter, MongoAdapter, PineconeAdapter, RedisAdapter
 
-# src/config/settings.py -> src/config -> src -> the repository root.
+# src/config/serverConfig.py -> src/config -> src -> the repository root.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
+# Which set of variables to read: the server's or the tests'. Only the real
+# environment can set it, since it decides which file is read.
+RUN_ENV_ENV_VAR = "RAG_ENV"
+DEFAULT_RUN_ENV = "server"
+ENV_FILE_PATHS = {
+    "server": PROJECT_ROOT / "server.env",
+    "test": PROJECT_ROOT / "test.env",
+}
 
 PINECONE_API_KEY_ENV_VAR = "PINECONE_API_KEY"
 PINECONE_INDEX_NAME_ENV_VAR = "PINECONE_INDEX_NAME"
@@ -42,6 +53,14 @@ REDIS_URL_ENV_VAR = "REDIS_URL"
 MONGODB_URI_ENV_VAR = "MONGODB_URI"
 MONGODB_DATABASE_ENV_VAR = "MONGODB_DATABASE"
 UNRAR_TOOL_ENV_VAR = "RAG_UNRAR_TOOL"
+
+# The API key each LLM provider in `LLM/configLLM.json` is built with.
+LLM_API_KEY_ENV_VARS = {
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "google_genai": "GEMINI_API_KEY",
+    "xai": "XAI_API_KEY",
+}
 
 # Firestore reserves "(default)" for a project's unnamed database. This project's
 # database is *named* "default", which is a different thing and only resolves
@@ -58,7 +77,7 @@ class ConfigurationError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class Settings:
+class ServerConfig:
     """Every external endpoint this service talks to, as configured.
 
     Frozen: configuration is read at startup and not rewritten afterwards, so a
@@ -77,6 +96,7 @@ class Settings:
     mongoUri: str = ""
     mongoDatabase: str = ""
     unrarTool: str = ""
+    llmApiKeys: dict = field(default_factory=dict)
 
     @property
     def hasPinecone(self) -> bool:
@@ -106,10 +126,11 @@ class Settings:
 def resolveCredentialsPath(rawPath: str) -> str:
     """Turn a credentials path from the environment into an absolute one.
 
-    `.env` holds it relative to the repository root, which only resolves while
-    the process happens to be running from there - true for `fastapi dev`, not
-    true for a worker started elsewhere or for pytest run from a subdirectory.
-    Anchoring it to the root makes the working directory stop mattering.
+    The env file holds it relative to the repository root, which only
+    resolves while the process happens to be running from there - true for
+    `fastapi dev`, not true for a worker started elsewhere or for pytest run
+    from a subdirectory. Anchoring it to the root makes the working directory
+    stop mattering.
 
     An absolute path is returned unchanged, so a container that mounts its key
     somewhere else is unaffected.
@@ -123,46 +144,75 @@ def resolveCredentialsPath(rawPath: str) -> str:
     return str(path)
 
 
-def loadEnvironment() -> bool:
-    """Read `.env` into the process environment. Returns whether a file was found.
+def getEnvFilePath() -> Path:
+    """The env file for `RAG_ENV`: `server.env` or `test.env`.
 
-    Values already set in the real environment are left alone: deployment
-    configuration outranks a file that only exists on a developer's machine.
-    Safe to call repeatedly.
+    Raises:
+        ConfigurationError: If `RAG_ENV` names neither.
     """
-    return load_dotenv(ENV_FILE_PATH, override=False)
+    runEnv = os.environ.get(RUN_ENV_ENV_VAR) or DEFAULT_RUN_ENV
+    if runEnv not in ENV_FILE_PATHS:
+        raise ConfigurationError(
+            f"${RUN_ENV_ENV_VAR} is {runEnv!r}; expected one of "
+            f"{', '.join(ENV_FILE_PATHS)}."
+        )
+    return ENV_FILE_PATHS[runEnv]
+
+
+def readEnvFile() -> dict:
+    """The variables in the env file, or nothing when there is no file."""
+    return dotenv_values(getEnvFilePath())
+
+
+def readSetting(envVarName: str, envFileValues: dict) -> str:
+    """A variable from the environment, else from the env file, else empty.
+
+    Deployment configuration outranks a file that only exists on a
+    developer's machine.
+    """
+    return os.environ.get(envVarName) or envFileValues.get(envVarName) or ""
 
 
 @lru_cache(maxsize=1)
-def getSettings() -> Settings:
+def getServerConfig() -> ServerConfig:
     """The configuration for this process, read once and cached.
 
     Cached because the values cannot change without a restart, and because a
     frozen snapshot means two components cannot disagree about what is
-    configured. Call `getSettings.cache_clear()` in a test that needs to reload.
+    configured. Call `getServerConfig.cache_clear()` in a test that needs to
+    reload.
     """
-    loadEnvironment()
+    envFileValues = readEnvFile()
 
-    credentialsPath = resolveCredentialsPath(os.environ.get(GOOGLE_CREDENTIALS_ENV_VAR, ""))
+    def read(envVarName: str) -> str:
+        return readSetting(envVarName, envFileValues)
+
+    credentialsPath = resolveCredentialsPath(read(GOOGLE_CREDENTIALS_ENV_VAR))
     if credentialsPath:
         # google-auth reads this variable itself, from anything in this process
         # that builds its own client. Rewriting it absolute keeps those in step
         # with the adapters built here.
         os.environ[GOOGLE_CREDENTIALS_ENV_VAR] = credentialsPath
 
-    return Settings(
-        pineconeApiKey=os.environ.get(PINECONE_API_KEY_ENV_VAR, ""),
-        pineconeIndexName=os.environ.get(PINECONE_INDEX_NAME_ENV_VAR, ""),
-        pineconeIndexHost=os.environ.get(PINECONE_INDEX_HOST_ENV_VAR, ""),
-        gcpProjectId=os.environ.get(GCP_PROJECT_ID_ENV_VAR, ""),
+    return ServerConfig(
+        pineconeApiKey=read(PINECONE_API_KEY_ENV_VAR),
+        pineconeIndexName=read(PINECONE_INDEX_NAME_ENV_VAR),
+        pineconeIndexHost=read(PINECONE_INDEX_HOST_ENV_VAR),
+        gcpProjectId=read(GCP_PROJECT_ID_ENV_VAR),
         firestoreDatabaseId=(
-            os.environ.get(FIRESTORE_DATABASE_ID_ENV_VAR) or DEFAULT_FIRESTORE_DATABASE_ID
+            read(FIRESTORE_DATABASE_ID_ENV_VAR)
+            or DEFAULT_FIRESTORE_DATABASE_ID
         ),
         googleCredentialsPath=credentialsPath,
-        redisUrl=os.environ.get(REDIS_URL_ENV_VAR, ""),
-        mongoUri=os.environ.get(MONGODB_URI_ENV_VAR, ""),
-        mongoDatabase=os.environ.get(MONGODB_DATABASE_ENV_VAR, ""),
-        unrarTool=os.environ.get(UNRAR_TOOL_ENV_VAR, ""),
+        redisUrl=read(REDIS_URL_ENV_VAR),
+        mongoUri=read(MONGODB_URI_ENV_VAR),
+        mongoDatabase=read(MONGODB_DATABASE_ENV_VAR),
+        unrarTool=read(UNRAR_TOOL_ENV_VAR),
+        llmApiKeys={
+            provider: apiKey
+            for provider, envVarName in LLM_API_KEY_ENV_VARS.items()
+            if (apiKey := read(envVarName))
+        },
     )
 
 
@@ -171,7 +221,7 @@ def requireSetting(value: str, envVarName: str, purpose: str) -> str:
     if not value:
         raise ConfigurationError(
             f"{purpose} needs ${envVarName}, which is not set. Add it to "
-            f"{ENV_FILE_PATH.name} or to the environment."
+            f"{getEnvFilePath().name} or to the environment."
         )
     return value
 
@@ -185,9 +235,11 @@ def buildPineconeAdapter(**overrides) -> PineconeAdapter:
     Raises:
         ConfigurationError: If the API key or the index is not configured.
     """
-    settings = getSettings()
-    requireSetting(settings.pineconeApiKey, PINECONE_API_KEY_ENV_VAR, "Pinecone")
-    if not (settings.pineconeIndexName or settings.pineconeIndexHost):
+    serverConfig = getServerConfig()
+    requireSetting(
+        serverConfig.pineconeApiKey, PINECONE_API_KEY_ENV_VAR, "Pinecone"
+    )
+    if not (serverConfig.pineconeIndexName or serverConfig.pineconeIndexHost):
         raise ConfigurationError(
             f"Pinecone needs ${PINECONE_INDEX_NAME_ENV_VAR} or "
             f"${PINECONE_INDEX_HOST_ENV_VAR}, and neither is set."
@@ -195,9 +247,9 @@ def buildPineconeAdapter(**overrides) -> PineconeAdapter:
 
     return PineconeAdapter(
         **{
-            "apiKey": settings.pineconeApiKey,
-            "indexName": settings.pineconeIndexName,
-            "indexHost": settings.pineconeIndexHost,
+            "apiKey": serverConfig.pineconeApiKey,
+            "indexName": serverConfig.pineconeIndexName,
+            "indexHost": serverConfig.pineconeIndexHost,
             **overrides,
         }
     )
@@ -210,8 +262,8 @@ def buildFirestoreAdapter(**overrides) -> FirestoreAdapter:
         ConfigurationError: If neither a project id nor credentials are set,
             leaving nothing to identify the database with.
     """
-    settings = getSettings()
-    if not settings.hasFirestore:
+    serverConfig = getServerConfig()
+    if not serverConfig.hasFirestore:
         raise ConfigurationError(
             f"Firestore needs ${GCP_PROJECT_ID_ENV_VAR} or "
             f"${GOOGLE_CREDENTIALS_ENV_VAR}, and neither is set."
@@ -219,9 +271,9 @@ def buildFirestoreAdapter(**overrides) -> FirestoreAdapter:
 
     return FirestoreAdapter(
         **{
-            "projectId": settings.gcpProjectId,
-            "databaseId": settings.firestoreDatabaseId,
-            "credentialsPath": settings.googleCredentialsPath,
+            "projectId": serverConfig.gcpProjectId,
+            "databaseId": serverConfig.firestoreDatabaseId,
+            "credentialsPath": serverConfig.googleCredentialsPath,
             **overrides,
         }
     )
@@ -233,9 +285,9 @@ def buildRedisAdapter(**overrides) -> RedisAdapter:
     Raises:
         ConfigurationError: If `REDIS_URL` is not set.
     """
-    settings = getSettings()
-    requireSetting(settings.redisUrl, REDIS_URL_ENV_VAR, "Redis")
-    return RedisAdapter(**{"connectionUrl": settings.redisUrl, **overrides})
+    serverConfig = getServerConfig()
+    requireSetting(serverConfig.redisUrl, REDIS_URL_ENV_VAR, "Redis")
+    return RedisAdapter(**{"connectionUrl": serverConfig.redisUrl, **overrides})
 
 
 def buildMongoAdapter(**overrides) -> MongoAdapter:
@@ -246,13 +298,15 @@ def buildMongoAdapter(**overrides) -> MongoAdapter:
             has a default worth guessing at: a wrong guess writes real documents
             into the wrong place.
     """
-    settings = getSettings()
-    requireSetting(settings.mongoUri, MONGODB_URI_ENV_VAR, "MongoDB")
-    requireSetting(settings.mongoDatabase, MONGODB_DATABASE_ENV_VAR, "MongoDB")
+    serverConfig = getServerConfig()
+    requireSetting(serverConfig.mongoUri, MONGODB_URI_ENV_VAR, "MongoDB")
+    requireSetting(
+        serverConfig.mongoDatabase, MONGODB_DATABASE_ENV_VAR, "MongoDB"
+    )
     return MongoAdapter(
         **{
-            "connectionUri": settings.mongoUri,
-            "databaseName": settings.mongoDatabase,
+            "connectionUri": serverConfig.mongoUri,
+            "databaseName": serverConfig.mongoDatabase,
             **overrides,
         }
     )

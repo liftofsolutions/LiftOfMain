@@ -1,26 +1,25 @@
-"""Configuration for the service: `.env` loading and the adapter factories.
+"""Server configuration: values from the environment or the env file,
+and the adapter factories.
 
-    from config import getSettings, buildFirestoreAdapter
+    from config import getServerConfig, buildFirestoreAdapter
 """
 
-from config.settings import (
+from config.serverConfig import (
     ConfigurationError,
-    Settings,
+    ServerConfig,
     buildFirestoreAdapter,
     buildMongoAdapter,
     buildPineconeAdapter,
     buildRedisAdapter,
-    getSettings,
-    loadEnvironment,
+    getServerConfig,
 )
 
 __all__ = [
     "ConfigurationError",
-    "Settings",
+    "ServerConfig",
     "buildFirestoreAdapter",
     "buildMongoAdapter",
     "buildPineconeAdapter",
     "buildRedisAdapter",
-    "getSettings",
-    "loadEnvironment",
+    "getServerConfig",
 ]

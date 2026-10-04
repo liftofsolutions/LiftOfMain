@@ -117,8 +117,9 @@ module's `*_ENV_VAR` constants:
 
 Firestore also accepts the ambient credentials available on Cloud Run and GCE.
 
-**Do not read those variables yourself.** Nothing loads `.env` on its own, and
-this project does not spell every variable the way the adapters do - it uses
+**Do not read those variables yourself.** Nothing loads `server.env` /
+`test.env` into the environment, and this project does not spell every
+variable the way the adapters do - it uses
 `GCP_PROJECT_ID` and `FIRESTORE_DATABASE_ID` where the adapters default to
 `GOOGLE_CLOUD_PROJECT` and `FIRESTORE_DATABASE`. The `config` component reconciles
 the two and is the intended entry point:
