@@ -1,0 +1,263 @@
+{
+  "_note": "Prices are illustrative. Load real rates from each provider's rate card.",
+  "prices": [
+    {
+      "_id": "bc65a76b-3f1e-4cf6-bbac-03ae34ef4b5b",
+      "provider": "anthropic",
+      "handler": "anthropic_chat",
+      "sku": "<model id>",
+      "unit": "input_token",
+      "price_micros": 3000000,
+      "per_units": 1000000,
+      "effective_from": "2026-10-01T00:00:00Z",
+      "created_at": "2026-10-01T00:00:00Z",
+      "updated_at": "2026-10-01T00:00:00Z"
+    },
+    {
+      "_id": "0f201c41-8116-4304-b1d4-876bfef82b0a",
+      "provider": "anthropic",
+      "handler": "anthropic_chat",
+      "sku": "<model id>",
+      "unit": "output_token",
+      "price_micros": 15000000,
+      "per_units": 1000000,
+      "effective_from": "2026-10-01T00:00:00Z",
+      "created_at": "2026-10-01T00:00:00Z",
+      "updated_at": "2026-10-01T00:00:00Z"
+    },
+    {
+      "_id": "13408374-2d3e-4ad0-91f0-dc24575720b1",
+      "provider": "tavily",
+      "handler": "tavily_search",
+      "sku": "basic",
+      "unit": "search",
+      "price_micros": 8000,
+      "per_units": 1,
+      "effective_from": "2026-10-01T00:00:00Z",
+      "created_at": "2026-10-01T00:00:00Z",
+      "updated_at": "2026-10-01T00:00:00Z"
+    },
+    {
+      "_id": "2753f6bb-7680-4cea-99e3-6a856608b000",
+      "provider": "meta",
+      "handler": "whatsapp",
+      "sku": "service",
+      "unit": "message",
+      "price_micros": 0,
+      "per_units": 1,
+      "effective_from": "2026-10-01T00:00:00Z",
+      "created_at": "2026-10-01T00:00:00Z",
+      "updated_at": "2026-10-01T00:00:00Z"
+    },
+    {
+      "_id": "f1b995ea-24fb-436e-b976-e0b3952c67d9",
+      "provider": "meta",
+      "handler": "whatsapp",
+      "sku": "marketing",
+      "unit": "message",
+      "country": "IN",
+      "price_micros": 10000,
+      "per_units": 1,
+      "effective_from": "2026-10-01T00:00:00Z",
+      "created_at": "2026-10-01T00:00:00Z",
+      "updated_at": "2026-10-01T00:00:00Z"
+    },
+    {
+      "_id": "b713a53e-b227-4dc1-bb4f-f64e1dc52a55",
+      "provider": "meta",
+      "handler": "whatsapp",
+      "sku": "marketing",
+      "unit": "message",
+      "price_micros": 25000,
+      "per_units": 1,
+      "effective_from": "2026-10-01T00:00:00Z",
+      "created_at": "2026-10-01T00:00:00Z",
+      "updated_at": "2026-10-01T00:00:00Z"
+    }
+  ],
+  "transaction": {
+    "_id": "b9983e25-a466-44fb-846c-0fdd5657848b",
+    "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+    "agent_id": "88f95300-7453-4609-b685-2c424cc181d5",
+    "trigger_id": "d9d81456-5f87-4b46-80e1-0c4d39b36ec7",
+    "input": {
+      "object": "whatsapp_business_account",
+      "entry": [
+        {
+          "id": "998877",
+          "changes": [
+            {
+              "field": "messages",
+              "value": {
+                "messaging_product": "whatsapp",
+                "metadata": {
+                  "phone_number_id": "111222333"
+                },
+                "contacts": [
+                  {
+                    "wa_id": "919812345678",
+                    "profile": {
+                      "name": "Priya"
+                    }
+                  }
+                ],
+                "messages": [
+                  {
+                    "from": "919812345678",
+                    "id": "wamid.HBgM…A1",
+                    "timestamp": "1791178800",
+                    "type": "text",
+                    "text": {
+                      "body": "Do you deliver to Pune? How long does it take?"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "reply": "Yes, we deliver to Pune. Orders usually arrive in 2–3 business days.",
+      "send_response": {
+        "messaging_product": "whatsapp",
+        "contacts": [
+          {
+            "input": "919812345678",
+            "wa_id": "919812345678"
+          }
+        ],
+        "messages": [
+          {
+            "id": "wamid.HBgM…B7"
+          }
+        ]
+      }
+    },
+    "status": "succeeded",
+    "total_micros": 20300,
+    "steps": [
+      {
+        "step": 1,
+        "total_micros": 12950,
+        "nodes": [
+          {
+            "node_id": "473b3fd6-5886-40fc-bd5a-a5d414591bf2",
+            "node_name": "reply",
+            "price_id": "bc65a76b-3f1e-4cf6-bbac-03ae34ef4b5b",
+            "usage": {
+              "input_tokens": 1200
+            },
+            "cost_micros": 3600
+          },
+          {
+            "node_id": "473b3fd6-5886-40fc-bd5a-a5d414591bf2",
+            "node_name": "reply",
+            "price_id": "0f201c41-8116-4304-b1d4-876bfef82b0a",
+            "usage": {
+              "output_tokens": 90
+            },
+            "cost_micros": 1350
+          },
+          {
+            "node_id": "bffe1424-267a-4ef6-9c05-1cc9c9a62f15",
+            "node_name": "web_search",
+            "price_id": "13408374-2d3e-4ad0-91f0-dc24575720b1",
+            "usage": {
+              "searches": 1,
+              "query": "Acme delivery time Pune"
+            },
+            "cost_micros": 8000
+          }
+        ]
+      },
+      {
+        "step": 2,
+        "total_micros": 7350,
+        "nodes": [
+          {
+            "node_id": "473b3fd6-5886-40fc-bd5a-a5d414591bf2",
+            "node_name": "reply",
+            "price_id": "bc65a76b-3f1e-4cf6-bbac-03ae34ef4b5b",
+            "usage": {
+              "input_tokens": 1850
+            },
+            "cost_micros": 5550
+          },
+          {
+            "node_id": "473b3fd6-5886-40fc-bd5a-a5d414591bf2",
+            "node_name": "reply",
+            "price_id": "0f201c41-8116-4304-b1d4-876bfef82b0a",
+            "usage": {
+              "output_tokens": 120
+            },
+            "cost_micros": 1800
+          }
+        ]
+      },
+      {
+        "step": 3,
+        "total_micros": 0,
+        "nodes": [
+          {
+            "node_id": "9e60cc8c-e30f-44f7-b025-2c613f181635",
+            "node_name": "whatsapp",
+            "price_id": "2753f6bb-7680-4cea-99e3-6a856608b000",
+            "usage": {
+              "messages": 1,
+              "category": "service",
+              "country": "IN"
+            },
+            "cost_micros": 0
+          }
+        ]
+      }
+    ],
+    "finished_at": "2026-10-05T09:00:04Z",
+    "created_at": "2026-10-05T09:00:00Z",
+    "updated_at": "2026-10-05T09:00:04Z"
+  },
+  "agent_storage": {
+    "_id": "3cb36e68-7de5-4ef1-baec-1e24356a1841",
+    "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+    "agent_id": "88f95300-7453-4609-b685-2c424cc181d5",
+    "kind": "conversation",
+    "key": "whatsapp:+919812345678",
+    "data": {
+      "customer": {
+        "name": "Priya",
+        "phone": "+919812345678"
+      },
+      "messages": [
+        {
+          "type": "human",
+          "content": "Hi, is the X200 in stock?",
+          "at": "2026-10-04T15:20:00Z"
+        },
+        {
+          "type": "ai",
+          "content": "Hi Priya! Yes, the X200 is in stock.",
+          "at": "2026-10-04T15:20:03Z"
+        },
+        {
+          "type": "ai",
+          "content": "Would you like the price and delivery details?",
+          "at": "2026-10-04T15:20:03Z"
+        },
+        {
+          "type": "human",
+          "content": "Do you deliver to Pune? How long does it take?",
+          "at": "2026-10-05T09:00:00Z"
+        },
+        {
+          "type": "ai",
+          "content": "Yes, we deliver to Pune. Orders usually arrive in 2–3 business days.",
+          "at": "2026-10-05T09:00:04Z"
+        }
+      ]
+    },
+    "created_at": "2026-10-04T15:20:00Z",
+    "updated_at": "2026-10-05T09:00:04Z"
+  }
+}

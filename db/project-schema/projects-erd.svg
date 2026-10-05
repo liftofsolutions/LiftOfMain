@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="768" viewBox="0 0 860 768" role="img" aria-labelledby="er-title er-desc">
+        <title id="er-title">projects entity relationship diagram</title>
+        <desc id="er-desc">A project belongs to a user (personal) or to an organization. Each project has its own roles in project_roles, managed by the project owner, and one or more members in project_members; each member links a user to the project with one of its roles.</desc>
+        <style>
+.er-box { fill: #FFFFFF; stroke: #B9C2CC; stroke-width: 1; }
+.er-box-ref { fill: #FFFFFF; stroke: #5A6474; stroke-width: 1; stroke-dasharray: 5 4; }
+.er-head-main { fill: #0B6B6B; }
+.er-head { fill: #E2EFEE; }
+.er-head-ref { fill: #EDF0F3; }
+.er-sep { stroke: #E1E6EB; stroke-width: 1; }
+.er-linkrow { fill: #E2EFEE; }
+.er-title-main { font-family: "Instrument Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif; font-size: 16px; font-weight: 600; fill: #FFFFFF; }
+.er-tag-main { font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, "DejaVu Sans", sans-serif; font-size: 12px; fill: #FFFFFF; opacity: 0.85; }
+.er-title { font-family: "Instrument Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif; font-size: 16px; font-weight: 600; fill: #17202A; }
+.er-tag { font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, "DejaVu Sans", sans-serif; font-size: 12px; fill: #5A6474; }
+.er-f { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12.5px; fill: #17202A; }
+.er-f.link { fill: #0B6B6B; font-weight: 500; }
+.er-ty { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12px; fill: #5A6474; }
+.er-pk { fill: #0B6B6B; font-weight: 500; }
+.er-line { stroke: #0B6B6B; stroke-width: 1.5; fill: none; }
+.er-zero { fill: #FFFFFF; stroke: #0B6B6B; stroke-width: 1.5; }
+.er-card { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12px; font-weight: 500; fill: #0B6B6B; }
+        </style>
+        <rect width="860" height="768" fill="#FFFFFF"/>
+
+        <rect class="er-box-ref" x="24" y="24" width="300" height="68" rx="8"/>
+        <path class="er-head-ref" d="M24.5 32 Q24.5 24.5 32 24.5 H316 Q323.5 24.5 323.5 32 V64 H24.5 Z"/>
+        <text class="er-title" x="38" y="49">users</text>
+        <text class="er-tag" x="310" y="49" text-anchor="end">from User schema</text>
+        <line class="er-sep" x1="24" y1="64" x2="324" y2="64"/>
+        <text class="er-f" x="38" y="82">_id</text><text class="er-ty" x="310" y="82" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+
+        <rect class="er-box" x="24" y="140" width="300" height="236" rx="8"/>
+        <rect class="er-linkrow" x="25" y="208" width="298" height="28"/>
+        <rect class="er-linkrow" x="25" y="236" width="298" height="28"/>
+        <rect class="er-linkrow" x="25" y="264" width="298" height="28"/>
+        <path class="er-head-main" d="M24 148 Q24 140 32 140 H316 Q324 140 324 148 V180 H24 Z"/>
+        <text class="er-title-main" x="38" y="165">project_members</text>
+        <text class="er-tag-main" x="310" y="165" text-anchor="end">collection</text>
+        <line class="er-sep" x1="24" y1="208" x2="324" y2="208"/>
+        <line class="er-sep" x1="24" y1="236" x2="324" y2="236"/>
+        <line class="er-sep" x1="24" y1="264" x2="324" y2="264"/>
+        <line class="er-sep" x1="24" y1="292" x2="324" y2="292"/>
+        <line class="er-sep" x1="24" y1="320" x2="324" y2="320"/>
+        <line class="er-sep" x1="24" y1="348" x2="324" y2="348"/>
+        <text class="er-f" x="38" y="198">_id</text><text class="er-ty" x="310" y="198" text-anchor="end">{project_id}_{user_id} <tspan class="er-pk">PK</tspan></text>
+        <text class="er-f link" x="38" y="226">project_id</text><text class="er-ty" x="310" y="226" text-anchor="end">uuid FK</text>
+        <text class="er-f link" x="38" y="254">user_id</text><text class="er-ty" x="310" y="254" text-anchor="end">uuid FK</text>
+        <text class="er-f link" x="38" y="282">role_id</text><text class="er-ty" x="310" y="282" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="38" y="310">added_by</text><text class="er-ty" x="310" y="310" text-anchor="end">uuid FK → users</text>
+        <text class="er-f" x="38" y="338">created_at</text><text class="er-ty" x="310" y="338" text-anchor="end">date</text>
+        <text class="er-f" x="38" y="366">updated_at</text><text class="er-ty" x="310" y="366" text-anchor="end">date</text>
+
+        <rect class="er-box-ref" x="536" y="24" width="300" height="68" rx="8"/>
+        <path class="er-head-ref" d="M536.5 32 Q536.5 24.5 544 24.5 H828 Q835.5 24.5 835.5 32 V64 H536.5 Z"/>
+        <text class="er-title" x="550" y="49">organizations</text>
+        <text class="er-tag" x="822" y="49" text-anchor="end">from Organization schema</text>
+        <line class="er-sep" x1="536" y1="64" x2="836" y2="64"/>
+        <text class="er-f" x="550" y="82">_id</text><text class="er-ty" x="822" y="82" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+
+        <rect class="er-box" x="536" y="140" width="300" height="348" rx="8"/>
+        <rect class="er-linkrow" x="537" y="292" width="298" height="28"/>
+        <path class="er-head-main" d="M536 148 Q536 140 544 140 H828 Q836 140 836 148 V180 H536 Z"/>
+        <text class="er-title-main" x="550" y="165">projects</text>
+        <text class="er-tag-main" x="822" y="165" text-anchor="end">collection</text>
+        <line class="er-sep" x1="536" y1="208" x2="836" y2="208"/>
+        <line class="er-sep" x1="536" y1="236" x2="836" y2="236"/>
+        <line class="er-sep" x1="536" y1="264" x2="836" y2="264"/>
+        <line class="er-sep" x1="536" y1="292" x2="836" y2="292"/>
+        <line class="er-sep" x1="536" y1="320" x2="836" y2="320"/>
+        <line class="er-sep" x1="536" y1="348" x2="836" y2="348"/>
+        <line class="er-sep" x1="536" y1="376" x2="836" y2="376"/>
+        <line class="er-sep" x1="536" y1="404" x2="836" y2="404"/>
+        <line class="er-sep" x1="536" y1="432" x2="836" y2="432"/>
+        <line class="er-sep" x1="536" y1="460" x2="836" y2="460"/>
+        <text class="er-f" x="550" y="198">_id</text><text class="er-ty" x="822" y="198" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+        <text class="er-f" x="550" y="226">name</text><text class="er-ty" x="822" y="226" text-anchor="end">string</text>
+        <text class="er-f" x="550" y="254">description?</text><text class="er-ty" x="822" y="254" text-anchor="end">string</text>
+        <text class="er-f" x="550" y="282">scope</text><text class="er-ty" x="822" y="282" text-anchor="end">personal | org</text>
+        <text class="er-f link" x="550" y="310">org_id?</text><text class="er-ty" x="822" y="310" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="550" y="338">status</text><text class="er-ty" x="822" y="338" text-anchor="end">active | archived</text>
+        <text class="er-f" x="550" y="366">member_count</text><text class="er-ty" x="822" y="366" text-anchor="end">int</text>
+        <text class="er-f" x="550" y="394">created_by</text><text class="er-ty" x="822" y="394" text-anchor="end">uuid FK → users</text>
+        <text class="er-f" x="550" y="422">created_at</text><text class="er-ty" x="822" y="422" text-anchor="end">date</text>
+        <text class="er-f" x="550" y="450">updated_at</text><text class="er-ty" x="822" y="450" text-anchor="end">date</text>
+        <text class="er-f" x="550" y="478">deleted_at?</text><text class="er-ty" x="822" y="478" text-anchor="end">date</text>
+
+        <rect class="er-box" x="536" y="536" width="300" height="208" rx="8"/>
+        <rect class="er-linkrow" x="537" y="604" width="298" height="28"/>
+        <path class="er-head-main" d="M536 544 Q536 536 544 536 H828 Q836 536 836 544 V576 H536 Z"/>
+        <text class="er-title-main" x="550" y="561">project_roles</text>
+        <text class="er-tag-main" x="822" y="561" text-anchor="end">collection</text>
+        <line class="er-sep" x1="536" y1="604" x2="836" y2="604"/>
+        <line class="er-sep" x1="536" y1="632" x2="836" y2="632"/>
+        <line class="er-sep" x1="536" y1="660" x2="836" y2="660"/>
+        <line class="er-sep" x1="536" y1="688" x2="836" y2="688"/>
+        <line class="er-sep" x1="536" y1="716" x2="836" y2="716"/>
+        <text class="er-f" x="550" y="594">_id</text><text class="er-ty" x="822" y="594" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+        <text class="er-f link" x="550" y="622">project_id</text><text class="er-ty" x="822" y="622" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="550" y="650">name</text><text class="er-ty" x="822" y="650" text-anchor="end">string</text>
+        <text class="er-f" x="550" y="678">permissions</text><text class="er-ty" x="822" y="678" text-anchor="end">[view, edit, manage, …]</text>
+        <text class="er-f" x="550" y="706">created_at</text><text class="er-ty" x="822" y="706" text-anchor="end">date</text>
+        <text class="er-f" x="550" y="734">updated_at</text><text class="er-ty" x="822" y="734" text-anchor="end">date</text>
+
+        <!-- users to project_members: one to zero-or-more -->
+        <line class="er-line" x1="174" y1="92" x2="174" y2="140"/>
+        <line class="er-line" x1="168" y1="100" x2="180" y2="100"/>
+        <line class="er-line" x1="168" y1="106" x2="180" y2="106"/>
+        <circle class="er-zero" cx="174" cy="119" r="4.5"/>
+        <path class="er-line" d="M174 128 L166 140 M174 128 L182 140"/>
+        <text class="er-card" x="188" y="123">1 : 0..N</text>
+
+        <!-- projects to project_members: one to one-or-more -->
+        <path class="er-line" d="M324 222 H536"/>
+        <line class="er-line" x1="522" y1="215" x2="522" y2="229"/>
+        <line class="er-line" x1="528" y1="215" x2="528" y2="229"/>
+        <path class="er-line" d="M338 222 L324 214 M338 222 L324 230"/>
+        <line class="er-line" x1="344" y1="215" x2="344" y2="229"/>
+        <text class="er-card" x="432" y="213" text-anchor="middle">1 : N</text>
+
+        <!-- project_roles to project_members: one to zero-or-more -->
+        <path class="er-line" d="M324 278 H460 V590 H536"/>
+        <line class="er-line" x1="522" y1="583" x2="522" y2="597"/>
+        <line class="er-line" x1="528" y1="583" x2="528" y2="597"/>
+        <path class="er-line" d="M338 278 L324 270 M338 278 L324 286"/>
+        <circle class="er-zero" cx="347" cy="278" r="4.5"/>
+        <text class="er-card" x="470" y="434">1 : 0..N</text>
+
+        <!-- organizations to projects: zero-or-one to zero-or-more -->
+        <line class="er-line" x1="686" y1="92" x2="686" y2="140"/>
+        <line class="er-line" x1="679" y1="100" x2="693" y2="100"/>
+        <circle class="er-zero" cx="686" cy="110" r="4.5"/>
+        <circle class="er-zero" cx="686" cy="121" r="4.5"/>
+        <path class="er-line" d="M678 140 L686 129 L694 140"/>
+        <text class="er-card" x="700" y="119">0..1 : 0..N</text>
+
+        <!-- projects to project_roles: one to one-or-more -->
+        <line class="er-line" x1="686" y1="488" x2="686" y2="536"/>
+        <line class="er-line" x1="680" y1="496" x2="692" y2="496"/>
+        <line class="er-line" x1="680" y1="502" x2="692" y2="502"/>
+        <line class="er-line" x1="679" y1="516" x2="693" y2="516"/>
+        <path class="er-line" d="M678 536 L686 524 L694 536"/>
+        <text class="er-card" x="700" y="515">1 : N</text>
+      </svg>
