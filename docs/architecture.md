@@ -19,7 +19,10 @@ Rag/
       mongoAdapter.py
       firestoreAdapter.py
       redisAdapter.py
-      pineconeAdapter.py
+      pineconeDb/              # the one way to Pinecone
+        __init__.py
+        pineconeAdapter.py     # speaks to the index
+        pineconeDb.py          # shared queue: add/fetch/update/delete
     LLM/                       # chat model per role (no routes)
       __init__.py
       agentChatModel.py        # ChatModel + buildChatModel

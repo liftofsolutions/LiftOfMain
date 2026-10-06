@@ -2,7 +2,9 @@
 
 Two contracts, because two shapes of store:
 
-* :class:`VectorDbAdapter` - embeddings searched by similarity. Pinecone.
+* :class:`VectorDbAdapter` - embeddings searched by similarity. Implemented
+  for Pinecone in `DbAdapters.pineconeDb`, which is the one way the server
+  reaches Pinecone.
 * :class:`DocumentDbAdapter` - documents keyed by id. MongoDB, Firestore, Redis.
 
 Import from here rather than from the vendor modules, so swapping a store is a
@@ -35,11 +37,6 @@ from DbAdapters.mongoAdapter import (
     MongoAdapterError,
     MongoTransactionUnsupportedError,
 )
-from DbAdapters.pineconeAdapter import (
-    PineconeAdapter,
-    PineconeAdapterError,
-    PineconeTransactionError,
-)
 from DbAdapters.redisAdapter import RedisAdapter, RedisAdapterError, RedisContentionError
 from DbAdapters.vectorBase import QueryMatch, VectorDbAdapter, VectorRecord
 
@@ -55,9 +52,6 @@ __all__ = [
     "MongoAdapter",
     "MongoAdapterError",
     "MongoTransactionUnsupportedError",
-    "PineconeAdapter",
-    "PineconeAdapterError",
-    "PineconeTransactionError",
     "QueryMatch",
     "RedisAdapter",
     "RedisAdapterError",

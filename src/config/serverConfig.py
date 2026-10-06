@@ -19,7 +19,8 @@ Two jobs:
 
 The `build*Adapter` helpers are the intended entry point. Build one adapter per
 process and share it - each carries a connection pool that only pays off if it
-outlives the request.
+outlives the request. Pinecone's settings are read here too, but its adapter is
+built by `DbAdapters.pineconeDb`, the one way the server reaches Pinecone.
 """
 
 import os
@@ -29,7 +30,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from DbAdapters import FirestoreAdapter, MongoAdapter, PineconeAdapter, RedisAdapter
+from DbAdapters import FirestoreAdapter, MongoAdapter, RedisAdapter
 
 # src/config/serverConfig.py -> src/config -> src -> the repository root.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -224,35 +225,6 @@ def requireSetting(value: str, envVarName: str, purpose: str) -> str:
             f"{getEnvFilePath().name} or to the environment."
         )
     return value
-
-
-def buildPineconeAdapter(**overrides) -> PineconeAdapter:
-    """A Pinecone adapter pointed at the configured index.
-
-    Passing the host as well as the name saves a describe round trip on connect,
-    so both are handed over when both are known.
-
-    Raises:
-        ConfigurationError: If the API key or the index is not configured.
-    """
-    serverConfig = getServerConfig()
-    requireSetting(
-        serverConfig.pineconeApiKey, PINECONE_API_KEY_ENV_VAR, "Pinecone"
-    )
-    if not (serverConfig.pineconeIndexName or serverConfig.pineconeIndexHost):
-        raise ConfigurationError(
-            f"Pinecone needs ${PINECONE_INDEX_NAME_ENV_VAR} or "
-            f"${PINECONE_INDEX_HOST_ENV_VAR}, and neither is set."
-        )
-
-    return PineconeAdapter(
-        **{
-            "apiKey": serverConfig.pineconeApiKey,
-            "indexName": serverConfig.pineconeIndexName,
-            "indexHost": serverConfig.pineconeIndexHost,
-            **overrides,
-        }
-    )
 
 
 def buildFirestoreAdapter(**overrides) -> FirestoreAdapter:

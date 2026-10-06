@@ -21,6 +21,7 @@ from config.serverConfig import (
     getServerConfig,
     resolveCredentialsPath,
 )
+from DbAdapters.pineconeDb import buildPineconeAdapter
 
 # Every variable the component reads, so a test can clear the lot and set back
 # only what it is actually exercising.
@@ -307,12 +308,26 @@ class TestAdapterFactories:
             PINECONE_INDEX_HOST="https://rag-chunks.svc.pinecone.io",
         )
 
-        adapter = configModule.buildPineconeAdapter()
+        adapter = buildPineconeAdapter()
 
         assert adapter._indexName == "rag-chunks"
         # The host is passed as well as the name, which saves the describe round
         # trip the adapter would otherwise spend resolving one from the other.
         assert adapter._indexHost == "https://rag-chunks.svc.pinecone.io"
+
+    def testPineconeWithoutAKeyNamesIt(self, cleanEnvironment):
+        with pytest.raises(ConfigurationError) as raised:
+            buildPineconeAdapter()
+
+        assert "PINECONE_API_KEY" in str(raised.value)
+
+    def testPineconeWithAKeyButNoIndexSaysSo(self, cleanEnvironment):
+        buildEnvironment(cleanEnvironment, PINECONE_API_KEY="pc-key")
+
+        with pytest.raises(ConfigurationError) as raised:
+            buildPineconeAdapter()
+
+        assert "PINECONE_INDEX_NAME" in str(raised.value)
 
     def testFirestoreAdapterGetsTheNamedDatabase(self, cleanEnvironment):
         buildEnvironment(
@@ -333,7 +348,6 @@ class TestAdapterFactories:
     @pytest.mark.parametrize(
         "factoryName, expectedVariable",
         [
-            ("buildPineconeAdapter", "PINECONE_API_KEY"),
             ("buildFirestoreAdapter", "GCP_PROJECT_ID"),
             ("buildRedisAdapter", "REDIS_URL"),
             ("buildMongoAdapter", "MONGODB_URI"),
@@ -346,14 +360,6 @@ class TestAdapterFactories:
             getattr(configModule, factoryName)()
 
         assert expectedVariable in str(raised.value)
-
-    def testPineconeWithAKeyButNoIndexSaysSo(self, cleanEnvironment):
-        buildEnvironment(cleanEnvironment, PINECONE_API_KEY="pc-key")
-
-        with pytest.raises(ConfigurationError) as raised:
-            configModule.buildPineconeAdapter()
-
-        assert "PINECONE_INDEX_NAME" in str(raised.value)
 
     def testMongoWithAUriButNoDatabaseSaysSo(self, cleanEnvironment):
         buildEnvironment(cleanEnvironment, MONGODB_URI="mongodb://localhost:27017")

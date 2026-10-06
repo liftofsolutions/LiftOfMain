@@ -23,9 +23,10 @@ Three things exist so far:
 1. **`serverDetails`** - operational endpoints. `/health` returns the machine's
    CPU, memory, disk, network and process vitals plus a verdict on whether the
    box is overloading; `/status` is a cheap liveness check.
-2. **`DbAdapters`** - one async CRUD surface over Pinecone, MongoDB, Firestore and
-   Redis, so the store behind a caller can be swapped without touching the
-   caller.
+2. **`DbAdapters`** - every database the service uses. One async CRUD surface
+   over MongoDB, Firestore and Redis, so the store behind a caller can be
+   swapped without touching the caller; and **`DbAdapters/pineconeDb`**, the
+   one shared Pinecone queue and adapter for the whole server.
 3. **`LLM`** - one chat model per role (reviewer, chunker, summarizer,
    ragResponseEvaluator, chatAgent), with its provider, model, settings and
    system prompt.

@@ -71,9 +71,14 @@ Rules:
 - Register a new component in `main.py` with
   `app.include_router(<componentName>Router)`.
 
-Shared logic with no endpoints (`config/`, `LLM/`) skips `routes.py` and
-`model.py`. `LLM/` builds one chat model per role from `configLLM.json` and
-`systemPrompt.json` - see `docs/llm.md`.
+Shared logic with no endpoints (`config/`, `LLM/`, `DbAdapters/`) skips
+`routes.py` and `model.py`. `LLM/` builds one chat model per role from
+`configLLM.json` and `systemPrompt.json` - see `docs/llm.md`. Every database
+lives under `DbAdapters/`, never in a top-level folder of its own; a store
+that needs more than one module gets a subfolder there.
+`DbAdapters/pineconeDb/` is the only way to Pinecone: `getPineconeDb()`
+returns the shared queue (`add`, `fetch`, `update`, `delete`), worked over
+`MAX_CONNECTIONS` connections.
 
 ## Testing
 

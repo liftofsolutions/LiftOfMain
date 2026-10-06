@@ -17,8 +17,13 @@ Import from the package, not from the vendor modules.
 
 | Contract | For | Implemented by |
 | --- | --- | --- |
-| `VectorDbAdapter` | embeddings, searched by similarity | Pinecone |
+| `VectorDbAdapter` | embeddings, searched by similarity | Pinecone, in `pineconeDb/` |
 | `DocumentDbAdapter` | documents, keyed by id | MongoDB, Firestore, Redis |
+
+Pinecone has its own subfolder, `DbAdapters/pineconeDb/`, because it is more
+than an adapter: the server reaches it only through `getPineconeDb()`, whose
+queue holds the one adapter every caller shares. Import it from there -
+`from DbAdapters.pineconeDb import getPineconeDb` - not from `DbAdapters`.
 
 Both extend `DbAdapter` in `base.py`, which holds what they share regardless of
 store: the `connect()` / `close()` lifecycle, and how a partly-applied write is
@@ -125,10 +130,11 @@ variable the way the adapters do - it uses
 the two and is the intended entry point:
 
 ```python
-from config import buildFirestoreAdapter, buildPineconeAdapter
+from config import buildFirestoreAdapter
+from DbAdapters.pineconeDb import getPineconeDb
 
 store = buildFirestoreAdapter()          # project, database and credentials wired in
-index = buildPineconeAdapter()           # api key, index name and host wired in
+index = getPineconeDb()                  # the shared Pinecone queue
 ```
 
 It also anchors a relative `GOOGLE_APPLICATION_CREDENTIALS` to the repository
@@ -173,6 +179,9 @@ cache entry with no TTL is usually a bug and a second call is easy to forget.
 translation, credential path resolution, the `has*` flags and what each factory
 hands its adapter.
 
-The adapters themselves have none yet. `Btest/DbAdapters/` is where they go -
-logic and payload shaping tested directly against fakes, per
-[testing.md](testing.md).
+`Btest/DbAdapters/PineconeDbTest.py` is the one test for `pineconeDb`, and it
+runs against the real Pinecone test index - no fakes. It covers the connection,
+batching, ordering per record, the connection cap, failures and closing, in a
+namespace drawn per run and deleted after; it is skipped when Pinecone is not
+configured. The other adapters have no tests yet; theirs go in
+`Btest/DbAdapters/` too.

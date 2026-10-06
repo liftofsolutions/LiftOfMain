@@ -1,5 +1,8 @@
 """Pinecone implementation of :class:`~DbAdapters.vectorBase.VectorDbAdapter`.
 
+Part of `DbAdapters.pineconeDb`: the server never uses this directly, but
+through `getPineconeDb`, whose queue holds the one adapter it shares.
+
 Why every I/O method is `async def`
 -----------------------------------
 Declaring a function `async` does not on its own stop it blocking. An
@@ -39,7 +42,15 @@ import os
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from pinecone import AsyncIndex, Hit, PineconeAsyncio, ScoredVector, ServerlessSpec, Vector
+from pinecone import (
+    AsyncIndex,
+    Hit,
+    NotFoundError,
+    PineconeAsyncio,
+    ScoredVector,
+    ServerlessSpec,
+    Vector,
+)
 
 from DbAdapters.base import WriteFailure, WriteOutcome, chunkItems
 from DbAdapters.vectorBase import QueryMatch, VectorDbAdapter, VectorRecord
@@ -198,6 +209,7 @@ class PineconeAdapter(VectorDbAdapter):
         namespace: str | None = None,
         timeoutSeconds: float = DEFAULT_TIMEOUT_SECONDS,
         upsertBatchSize: int = DEFAULT_UPSERT_BATCH_SIZE,
+        connectionPoolSize: int = 0,
     ) -> None:
         """Record the connection settings without opening anything yet.
 
@@ -212,6 +224,9 @@ class PineconeAdapter(VectorDbAdapter):
                 to `$PINECONE_NAMESPACE` and then to the default namespace.
             timeoutSeconds: Per request timeout for every call.
             upsertBatchSize: Vectors per upsert request.
+            connectionPoolSize: Most connections held open to the index, so
+                at most this many requests run at once. 0 keeps the client's
+                own default.
 
         Raises:
             PineconeAdapterError: If no API key is available, or if neither an
@@ -225,6 +240,7 @@ class PineconeAdapter(VectorDbAdapter):
         )
         self._timeoutSeconds = timeoutSeconds
         self._upsertBatchSize = upsertBatchSize
+        self._connectionPoolSize = connectionPoolSize
 
         if not self._apiKey:
             raise PineconeAdapterError(
@@ -267,7 +283,11 @@ class PineconeAdapter(VectorDbAdapter):
             if self._index is not None:
                 return
 
-            client = PineconeAsyncio(api_key=self._apiKey, timeout=self._timeoutSeconds)
+            client = PineconeAsyncio(
+                api_key=self._apiKey,
+                timeout=self._timeoutSeconds,
+                connection_pool_maxsize=self._connectionPoolSize,
+            )
             try:
                 if self._indexHost:
                     index = client.IndexAsyncio(host=self._indexHost)
@@ -699,7 +719,8 @@ class PineconeAdapter(VectorDbAdapter):
     ) -> WriteOutcome:
         """Remove records by id.
 
-        Ids the index does not hold are not an error. Long id lists are split
+        Ids the index does not hold are not an error, and neither is a
+        namespace that does not exist. Long id lists are split
         across concurrent requests, and one failing request does not cancel the
         rest, so the result can describe a partial delete. Deletes are
         idempotent, so resending failed ids is safe.
@@ -718,7 +739,11 @@ class PineconeAdapter(VectorDbAdapter):
         appliedCount = 0
         failures: list[WriteFailure] = []
         for chunk, result in zip(chunks, results, strict=True):
-            if isinstance(result, BaseException):
+            # A namespace nothing was ever written to answers 404; it holds
+            # none of the ids, which is what the delete was for.
+            if isinstance(result, NotFoundError):
+                appliedCount += len(chunk)
+            elif isinstance(result, BaseException):
                 failures.append(
                     WriteFailure(
                         ids=chunk,

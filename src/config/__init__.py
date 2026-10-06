@@ -9,7 +9,6 @@ from config.serverConfig import (
     ServerConfig,
     buildFirestoreAdapter,
     buildMongoAdapter,
-    buildPineconeAdapter,
     buildRedisAdapter,
     getServerConfig,
 )
@@ -19,7 +18,6 @@ __all__ = [
     "ServerConfig",
     "buildFirestoreAdapter",
     "buildMongoAdapter",
-    "buildPineconeAdapter",
     "buildRedisAdapter",
     "getServerConfig",
 ]
