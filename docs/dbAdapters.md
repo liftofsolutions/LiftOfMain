@@ -25,6 +25,11 @@ than an adapter: the server reaches it only through `getPineconeDb()`, whose
 queue holds the one adapter every caller shares. Import it from there -
 `from DbAdapters.pineconeDb import getPineconeDb` - not from `DbAdapters`.
 
+The in-memory store has its own subfolder too, `DbAdapters/memoryDb/`: a
+Redis-like cache in the process's own memory, which every caller reaches
+through `getMemoryDb()`. There is nothing to connect to, so it follows
+neither contract. See [memoryDb.md](memoryDb.md).
+
 Both extend `DbAdapter` in `base.py`, which holds what they share regardless of
 store: the `connect()` / `close()` lifecycle, and how a partly-applied write is
 reported.
