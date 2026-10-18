@@ -33,6 +33,8 @@ INTERNAL_ERROR_DETAIL = "Internal server error."
 
 STATUS_INTERNAL_ERROR = 500
 ERROR_STATUS_CODES = {
+    service.ERROR_NOT_FOUND: 404,
+    service.ERROR_FORBIDDEN: 403,
     service.ERROR_NOT_IMPLEMENTED: 501,
 }
 

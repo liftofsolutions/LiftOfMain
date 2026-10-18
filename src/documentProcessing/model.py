@@ -24,6 +24,7 @@ class RagJobResponse(BaseModel):
     """A rag job and where it has got to."""
 
     jobId: str
+    ragId: str = Field(description="The rag the job writes into.")
     status: str
 
 

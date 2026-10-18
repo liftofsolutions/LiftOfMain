@@ -9,7 +9,8 @@ Firestore holds the record of truth, in the collections of
 `db/user-schema`, `db/project-schema` and `db/knowledge-schema`. A record
 Firestore does not have is not cached, so one made a moment later is still
 found. Each collection gets its own cache in memoryDb, registered when this
-module is imported.
+module is imported. `getFirestoreAdapter` is the one adapter the process
+shares; writes go straight through it.
 """
 
 from config import buildFirestoreAdapter
