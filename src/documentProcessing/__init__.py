@@ -1,1 +1,1 @@
-"""Document processing: rag database creation, submission and job status."""
+"""Rag jobs: create a job, submit a document to it, follow it, delete it."""
