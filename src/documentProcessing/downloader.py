@@ -23,7 +23,7 @@ folder, so no partial file is left behind.
 import shutil
 import tempfile
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 
@@ -64,6 +64,11 @@ class DownloadError(RuntimeError):
 def formatOf(documentLink: str) -> str:
     """The lowercased extension of the link's path, e.g. `.pdf`."""
     return PurePosixPath(urlparse(documentLink).path).suffix.lower()
+
+
+def fileNameOf(documentLink: str) -> str:
+    """The file name a link ends in, with percent-encoding undone."""
+    return PurePosixPath(unquote(urlparse(documentLink).path)).name
 
 
 def checkDocumentLink(documentLink: object) -> str | None:

@@ -6,7 +6,12 @@ from pydantic import BaseModel, Field
 class SubmitRagJobRequest(BaseModel):
     """The document a job processes, the country it is for, and metadata."""
 
-    documentId: str = Field(description="The document to process.")
+    documentLink: str = Field(
+        description=(
+            "http(s) link to the document: a .pdf, .docx, .txt, .md, or a "
+            ".zip, .rar or .tar of them."
+        )
+    )
     countryId: str | None = Field(
         default=None,
         description=(

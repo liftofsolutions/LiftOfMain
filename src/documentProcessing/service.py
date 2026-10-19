@@ -110,7 +110,6 @@ async def createRagJob(accountUuid: str, projectId: str) -> dict:
         "_id": jobId,
         "project_id": projectId,
         "rag_id": ragId,
-        "document_id": None,
         "type": JOB_TYPE_INDEX,
         "status": JOB_STATUS_CREATED,
         "attempts": 0,
@@ -132,16 +131,18 @@ async def submitRagJob(
     accountUuid: str,
     projectId: str,
     jobId: str,
-    documentId: str,
+    documentLink: str,
     countryId: str | None,
     metadata: dict,
 ) -> dict:
-    """Hand a created job, with its document, to the job manager.
+    """Hand a created job, with its document's link, to the job manager.
 
     Only the job is verified - it exists under `projectId` - since creating
-    it checked the account, the project and the membership. The manager
-    queues it and runs it when a slot is free; this returns at once. No
-    country means knowledge that applies to every country.
+    it checked the account, the project and the membership. The link is
+    checked by the job when it downloads; a link it cannot take fails the
+    job, with the reason as its error. The manager queues the job and runs
+    it when a slot is free; this returns at once. No country means
+    knowledge that applies to every country.
     """
     ragJob = await utilities.fetchRagJob(jobId)
     if ragJob is None or ragJob.get("project_id") != projectId:
@@ -154,7 +155,7 @@ async def submitRagJob(
         accountUuid=accountUuid,
         projectId=projectId,
         ragId=ragJob["rag_id"],
-        documentId=documentId,
+        documentLink=documentLink,
         countryId=countryId,
         metadata=metadata,
         createdAt=utcNow(),

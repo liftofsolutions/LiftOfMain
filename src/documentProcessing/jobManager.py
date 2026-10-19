@@ -14,12 +14,14 @@ Two entry points, and nothing else is meant to be called from outside:
   one is stopped. Its slot is freed and the next waiting job started at
   once, not when the stopped job has finished winding down.
 
-Scheduling is driven by the jobs themselves: each is given
-`onJobFinished` as its `onFinished`, and calls it once it is over with the
-status it ended in. That writes the status onto the job, frees its slot
-and starts the next waiting job. A job that is interrupted is called back
-for by `interruptAndDelete` instead, and its own call back is taken away,
-so `onJobFinished` still runs once per job.
+A job is started by running its `start` in a task, with its `finish` as
+the task's done callback. Scheduling is driven by the jobs themselves:
+each is given `onJobFinished` as its `onFinished`, and calls it once it is
+over with the status it ended in and, if it failed, the error. That writes
+both onto the job, frees its slot and starts the next waiting job. A job
+that is interrupted is called back for by `interruptAndDelete` instead,
+and its own call back is taken away, so `onJobFinished` still runs once
+per job.
 
 Every call is O(1). A job deleted while it waits is not searched for in
 the queue; it is left there and skipped when it reaches the front, since
@@ -30,6 +32,7 @@ holds for the whole server. Its jobs are in memory only: a restart loses
 them.
 """
 
+import asyncio
 import logging
 from collections import deque
 
@@ -89,15 +92,22 @@ class JobManager:
         LOGGER.info("Interrupted and deleted job %s.", jobId)
         return True
 
-    def onJobFinished(self, job: RagJob, status: str | None = None) -> None:
-        """A job's call back, with the status it ended in if it gives one.
+    def onJobFinished(
+        self,
+        job: RagJob,
+        status: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        """A job's call back, with how it ended and why, if it gives them.
 
-        Writes the status, when given, and the finish time onto the job,
-        frees its slot, forgets it, and starts the next waiting job. With
-        no status, the job keeps the one it has.
+        Writes the status and the error, each when given, and the finish
+        time onto the job, frees its slot, forgets it, and starts the next
+        waiting job. With no status, the job keeps the one it has.
         """
         if status is not None:
             job.status = status
+        if error is not None:
+            job.error = error
         job.finishedAt = utcNow()
         LOGGER.info("Job finished: %s", job)
         if self.runningJobs.get(job.jobId) is job:
@@ -117,7 +127,8 @@ class JobManager:
                 # Deleted while it waited.
                 continue
             self.runningJobs[job.jobId] = job
-            job.start()
+            job.task = asyncio.create_task(job.start())
+            job.task.add_done_callback(job.finish)
 
 
 _JOB_MANAGER: JobManager | None = None

@@ -139,7 +139,7 @@ async def submitRagJob(
             accountUuid,
             projectId,
             jobId,
-            submission.documentId,
+            submission.documentLink,
             submission.countryId,
             submission.metadata,
         )
