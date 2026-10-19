@@ -1,8 +1,9 @@
 """Rag jobs: create one, submit a document to it, follow it, delete it.
 
-Creating a job is written; the rest is still to be designed, so those calls
-report that they are not implemented yet. Records follow
-`db/knowledge-schema` and are read and written through `utilities`.
+Creating a job and submitting one are written; the rest is still to be
+designed, so those calls report that they are not implemented yet. Records
+follow `db/knowledge-schema` and are read and written through `utilities`.
+A submitted job is run by the `JobManager`.
 
 Errors are returned, never raised: `{"error": message, "errorKind": kind}`,
 logged, with `errorKind` one of the `ERROR_*` constants for the route to
@@ -15,11 +16,14 @@ from datetime import datetime, timedelta, timezone
 
 from DbAdapters import Document, setOperation
 from documentProcessing import utilities
+from documentProcessing.jobManager import getJobManager
+from documentProcessing.ragJob import RagJob
 
 LOGGER = logging.getLogger(__name__)
 
 ERROR_NOT_FOUND = "notFound"
 ERROR_FORBIDDEN = "forbidden"
+ERROR_CONFLICT = "conflict"
 ERROR_NOT_IMPLEMENTED = "notImplemented"
 
 RAG_STATUS_INDEXING = "indexing"
@@ -132,11 +136,34 @@ async def submitRagJob(
     countryId: str | None,
     metadata: dict,
 ) -> dict:
-    """Give a created job its document, country and metadata, and start it.
+    """Hand a created job, with its document, to the job manager.
 
-    No country means knowledge that applies to every country.
+    Only the job is verified - it exists under `projectId` - since creating
+    it checked the account, the project and the membership. The manager
+    queues it and runs it when a slot is free; this returns at once. No
+    country means knowledge that applies to every country.
     """
-    return notImplemented("Submitting a rag job")
+    ragJob = await utilities.fetchRagJob(jobId)
+    if ragJob is None or ragJob.get("project_id") != projectId:
+        return errorResult(
+            ERROR_NOT_FOUND, f"Project {projectId!r} has no job {jobId!r}."
+        )
+
+    job = RagJob(
+        jobId=jobId,
+        accountUuid=accountUuid,
+        projectId=projectId,
+        ragId=ragJob["rag_id"],
+        documentId=documentId,
+        countryId=countryId,
+        metadata=metadata,
+        createdAt=utcNow(),
+    )
+    if not getJobManager().createJob(job):
+        return errorResult(
+            ERROR_CONFLICT, f"Job {jobId!r} is already submitted."
+        )
+    return {"jobId": jobId, "ragId": job.ragId, "status": job.status}
 
 
 async def getRagJobStatus(
