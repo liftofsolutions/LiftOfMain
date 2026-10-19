@@ -23,7 +23,8 @@ by number so a member's own name can never point outside it. Unpacking one
 document stops at MAX_UNPACKED_BYTES, MAX_ARCHIVE_FILES and
 MAX_ARCHIVE_DEPTH, so an archive built to unpack to far more than it weighs
 is cut off before it fills the disk. Unpacked files stay on disk:
-processing reads them later through `FileAnalysis.path`.
+processing reads them later through `FileAnalysis.path`; `textOf` gives a
+file's text.
 
 Parsing is blocking work, so call `analyzeDocument` through
 `asyncio.to_thread`.
@@ -373,6 +374,51 @@ READERS: dict[str, Callable[[FileAnalysis], None]] = {
     ".pdf": readPdf,
     ".docx": readDocx,
 }
+
+
+def plainTextOf(path: Path) -> str:
+    """A txt or md file's text."""
+    return path.read_text(encoding="utf-8-sig", errors="replace")
+
+
+def pdfTextOf(path: Path) -> str:
+    """A pdf's text, page after page, each page its own paragraph."""
+    pages = []
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            pages.append(page.extract_text() or "")
+            page.close()
+    return "\n\n".join(pages)
+
+
+def docxTextOf(path: Path) -> str:
+    """A Word document's paragraphs, then its table rows, as counted."""
+    wordDocument = docx.Document(str(path))
+    blocks = [
+        paragraph.text
+        for paragraph in wordDocument.paragraphs
+        if paragraph.text.strip()
+    ]
+    for table in wordDocument.tables:
+        for row in table.rows:
+            blocks.append(" | ".join(cell.text for cell in row.cells))
+    return "\n\n".join(blocks)
+
+
+TEXT_READERS: dict[str, Callable[[Path], str]] = {
+    ".txt": plainTextOf,
+    ".md": plainTextOf,
+    ".pdf": pdfTextOf,
+    ".docx": docxTextOf,
+}
+
+
+def textOf(analysis: FileAnalysis) -> str:
+    """The text of a file that was analyzed, read the way it was counted.
+
+    Paragraphs are kept apart by blank lines. Blocking, like the analysis.
+    """
+    return TEXT_READERS[analysis.fileFormat](analysis.path)
 
 
 def checksumOf(path: Path) -> str:

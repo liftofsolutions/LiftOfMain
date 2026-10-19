@@ -54,6 +54,8 @@ REDIS_URL_ENV_VAR = "REDIS_URL"
 MONGODB_URI_ENV_VAR = "MONGODB_URI"
 MONGODB_DATABASE_ENV_VAR = "MONGODB_DATABASE"
 UNRAR_TOOL_ENV_VAR = "RAG_UNRAR_TOOL"
+CHUNK_MAX_TOKENS_ENV_VAR = "RAG_CHUNK_MAX_TOKENS"
+CHUNK_OVERLAP_TOKENS_ENV_VAR = "RAG_CHUNK_OVERLAP_TOKENS"
 
 # The API key each LLM provider in `LLM/configLLM.json` is built with.
 LLM_API_KEY_ENV_VARS = {
@@ -79,7 +81,7 @@ class ConfigurationError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class ServerConfig:
-    """Every external endpoint this service talks to, as configured.
+    """Every external endpoint this service talks to, and its own settings.
 
     Frozen: configuration is read at startup and not rewritten afterwards, so a
     value read in one place cannot drift from the same value read in another.
@@ -97,6 +99,8 @@ class ServerConfig:
     mongoUri: str = ""
     mongoDatabase: str = ""
     unrarTool: str = ""
+    chunkMaxTokens: str = ""
+    chunkOverlapTokens: str = ""
     llmApiKeys: dict = field(default_factory=dict)
 
     @property
@@ -209,6 +213,8 @@ def getServerConfig() -> ServerConfig:
         mongoUri=read(MONGODB_URI_ENV_VAR),
         mongoDatabase=read(MONGODB_DATABASE_ENV_VAR),
         unrarTool=read(UNRAR_TOOL_ENV_VAR),
+        chunkMaxTokens=read(CHUNK_MAX_TOKENS_ENV_VAR),
+        chunkOverlapTokens=read(CHUNK_OVERLAP_TOKENS_ENV_VAR),
         llmApiKeys={
             provider: apiKey
             for provider, envVarName in LLM_API_KEY_ENV_VARS.items()
@@ -225,6 +231,25 @@ def requireSetting(value: str, envVarName: str, purpose: str) -> str:
             f"{getEnvFilePath().name} or to the environment."
         )
     return value
+
+
+def requireCount(
+    value: str, envVarName: str, default: int, minimum: int
+) -> int:
+    """`value` as a whole number, or `default` when it is not set.
+
+    Raises:
+        ConfigurationError: If it is set to anything but a whole number of
+            at least `minimum`.
+    """
+    if not value:
+        return default
+    if not value.strip().isdigit() or int(value) < minimum:
+        raise ConfigurationError(
+            f"${envVarName} is {value!r}; expected a whole number of at "
+            f"least {minimum}."
+        )
+    return int(value)
 
 
 def buildFirestoreAdapter(**overrides) -> FirestoreAdapter:

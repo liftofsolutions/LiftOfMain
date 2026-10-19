@@ -4,8 +4,11 @@
 gives it `onFinished` and, when a slot is free, runs `start` in a task with
 `finish` as the task's done callback. `start` is the whole job: it marks
 the job running, downloads the document from the link it was submitted
-with, then has `documentAnalyzer` work out what the document holds, file
-by file, and keeps that as `analysis` for processing later.
+with, has `documentAnalyzer` work out what the document holds, file by
+file, then takes the strategy `ragStrategy` picks by its token count.
+Plain text is saved on the rag's record. A rag's text is cut into
+`chunks`; sending them to Pinecone, which embeds them, is still to be
+written.
 
 `start` does not catch errors: one - a link to a format not taken, a
 download that fails, a document nothing can be read from - ends the task.
@@ -18,8 +21,9 @@ The call back is made from the task's done callback, not from inside
 ever ran executes none of its own code, so a `finally` in `start` would
 never be reached and the slot would stay taken.
 
-The download, and anything unpacked from it, stays in the job's folder for
-processing; a job that fails removes them.
+The download, and anything unpacked from it, stays in the job's folder
+while the job runs. A job that ends done or failed removes them; an
+interrupted one leaves them, as its analysis thread may still be reading.
 """
 
 import asyncio
@@ -29,8 +33,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from documentProcessing import documentAnalyzer, downloader
+from documentProcessing import documentAnalyzer, downloader, ragStrategy
 from documentProcessing.documentAnalyzer import DocumentAnalysis
+from documentProcessing.ragStrategy import Chunk
 
 LOGGER = logging.getLogger(__name__)
 
@@ -69,10 +74,12 @@ class RagJob:
     finishedAt: datetime | None = None
     error: str | None = None
 
-    # What processing found: where the document was saved, and what it
-    # holds.
+    # What processing found: where the document was saved, what it holds,
+    # the strategy it takes, and for a rag, its chunks.
     downloadPath: Path | None = None
     analysis: DocumentAnalysis | None = field(default=None, repr=False)
+    strategy: str | None = None
+    chunks: list[Chunk] = field(default_factory=list, repr=False)
 
     # Given by the manager: called once, when the job is over, with the
     # status it ended in and the error, if it failed.
@@ -83,11 +90,10 @@ class RagJob:
     task: asyncio.Task | None = field(default=None, repr=False)
 
     async def start(self) -> None:
-        """Do the job: download its document, then analyze what it holds.
+        """Do the job: download, analyze, then take the document's strategy.
 
-        The analysis runs in a thread, since parsing blocks. Indexing what
-        it found is still to be written. Errors are left to end the task;
-        `finish` passes them on.
+        Parsing and chunking run in a thread, since they block.
+        Errors are left to end the task; `finish` passes them on.
         """
         self.status = JOB_STATUS_RUNNING
         self.startedAt = utcNow()
@@ -111,6 +117,24 @@ class RagJob:
             self.analysis.skippedFiles,
         )
 
+        self.strategy = ragStrategy.selectStrategy(
+            self.analysis.totals()["tokenCount"]
+        )
+        if self.strategy == ragStrategy.STRATEGY_PLAIN_TEXT:
+            await ragStrategy.savePlainText(
+                self.ragId, self.documentLink, self.analysis
+            )
+        else:
+            self.chunks = await asyncio.to_thread(
+                ragStrategy.chunkDocument, self.analysis
+            )
+        LOGGER.info(
+            "Job %s took the %s strategy: %s chunks.",
+            self.jobId,
+            self.strategy,
+            len(self.chunks),
+        )
+
     def interrupt(self) -> None:
         """Cancel the job's task, if it has one still running."""
         if self.task is not None and not self.task.done():
@@ -119,8 +143,9 @@ class RagJob:
     def finish(self, task: asyncio.Task) -> None:
         """Call the manager back with how the job ended, and any error.
 
-        A failed job's folder is removed: whatever failed has finished by
-        the time the task has, analysis thread included.
+        A done or failed job's folder is removed: whatever read it has
+        finished by the time the task has, threads included. An
+        interrupted job's is left, as its thread may still be reading it.
         """
         error = None
         if task.cancelled():
@@ -131,8 +156,9 @@ class RagJob:
             LOGGER.error(
                 "Job %s failed.", self.jobId, exc_info=task.exception()
             )
-            downloader.removeDownload(self.jobId)
         else:
             status = JOB_STATUS_DONE
+        if status != JOB_STATUS_INTERRUPTED:
+            downloader.removeDownload(self.jobId)
         if self.onFinished is not None:
             self.onFinished(self, status, error)
