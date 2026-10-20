@@ -1,10 +1,7 @@
-"""Rag jobs: create one, submit a document to it, follow it, delete it.
+"""Rag jobs and rags: create, submit, follow, list and delete them.
 
-Creating a job, submitting one, reading its status and deleting a rag are
-written; deleting a job is still to be designed, so that call reports it
-is not implemented yet. Records
-follow `db/knowledge-schema` and are read and written through `utilities`.
-A submitted job is run by the `JobManager`.
+Records follow `db/knowledge-schema` and are read and written through
+`utilities`. A submitted job is run by the `JobManager`.
 
 Errors are returned, never raised: `{"error": message, "errorKind": kind}`,
 logged, with `errorKind` one of the `ERROR_*` constants for the route to
@@ -24,6 +21,7 @@ from documentProcessing.jobManager import getJobManager
 from documentProcessing.ragJob import (
     JOB_STATUS_DONE,
     JOB_STATUS_FAILED,
+    JOB_STATUS_RUNNING,
     RagJob,
 )
 
@@ -32,7 +30,6 @@ LOGGER = logging.getLogger(__name__)
 ERROR_NOT_FOUND = "notFound"
 ERROR_FORBIDDEN = "forbidden"
 ERROR_CONFLICT = "conflict"
-ERROR_NOT_IMPLEMENTED = "notImplemented"
 # Pinecone did not finish its part; doing it again picks up what is left.
 ERROR_INCOMPLETE = "incomplete"
 
@@ -74,13 +71,6 @@ def errorResult(errorKind: str, message: str) -> dict:
     """An error to hand back to the route, logged first."""
     LOGGER.error(message)
     return {"error": message, "errorKind": errorKind}
-
-
-def notImplemented(operation: str) -> dict:
-    """The error for an operation that has no logic yet, logged first."""
-    return errorResult(
-        ERROR_NOT_IMPLEMENTED, f"{operation} is not implemented yet."
-    )
 
 
 async def checkAccess(accountUuid: str, projectId: str) -> dict | None:
@@ -269,8 +259,83 @@ async def getRagJobStatus(
 
 
 async def deleteRagJob(accountUuid: str, projectId: str, jobId: str) -> dict:
-    """Stop the job if it is still going, then delete it."""
-    return notImplemented("Deleting a rag job")
+    """Delete a job that has not started, and the empty rag made with it.
+
+    For a member of its project, as `checkAccess` checks. Only a job its
+    record calls `created`, that the manager is not running, may go: one
+    that runs, or has finished, done or failed, is refused. One waiting in
+    the manager's queue is taken off it, so it never starts. Since it never
+    ran, its rag holds nothing; the two are deleted in one batch, so no rag
+    is left without its job.
+    """
+    denied = await checkAccess(accountUuid, projectId)
+    if denied is not None:
+        return denied
+    ragJob = await fetchProjectRecord(utilities.RAG_JOBS, projectId, jobId)
+    if ragJob is None:
+        return errorResult(
+            ERROR_NOT_FOUND, f"Project {projectId!r} has no job {jobId!r}."
+        )
+    jobManager = getJobManager()
+    status = ragJob.get("status")
+    if jobManager.isRunning(jobId):
+        status = JOB_STATUS_RUNNING
+    if status != JOB_STATUS_CREATED:
+        return errorResult(
+            ERROR_CONFLICT,
+            f"Job {jobId!r} is {status}; only a job that has not started "
+            "may be deleted.",
+        )
+
+    interrupted = jobManager.isHeld(jobId)
+    if interrupted:
+        jobManager.interruptAndDelete(jobId)
+    ragId = ragJob["rag_id"]
+    await utilities.getFirestoreAdapter().applyAtomically(
+        [
+            deleteOperation(utilities.RAG_JOBS, jobId),
+            deleteOperation(utilities.RAGS, ragId),
+        ]
+    )
+    LOGGER.info(
+        "Deleted job %s and its rag %s; taken off the queue: %s",
+        jobId,
+        ragId,
+        interrupted,
+    )
+    return {"jobId": jobId, "interrupted": interrupted}
+
+
+def ragSummaryOf(ragId: str, rag: dict) -> dict:
+    """A rag's record as it is listed: its state, without its text."""
+    return {
+        "ragId": ragId,
+        "status": rag.get("status"),
+        "strategy": rag.get("strategy"),
+        "documentLink": rag.get("document_link"),
+        "tokenCount": rag.get("token_count"),
+        "chunkCount": rag.get("chunk_count"),
+        "createdAt": rag.get("created_at"),
+        "updatedAt": rag.get("updated_at"),
+    }
+
+
+async def listRags(accountUuid: str, projectId: str) -> dict:
+    """Every rag of `projectId`, for a member of it.
+
+    `checkAccess` lets the account in first. The rags are read from
+    Firestore itself, not the cache, as their statuses move; a plain text
+    rag's text is left out, as it can be long.
+    """
+    denied = await checkAccess(accountUuid, projectId)
+    if denied is not None:
+        return denied
+    stored = await utilities.getFirestoreAdapter().findDocuments(
+        utilities.RAGS, equals={"project_id": projectId}, limit=0
+    )
+    rags = [ragSummaryOf(document.id, document.data) for document in stored]
+    LOGGER.info("Listed %s rags of project %s.", len(rags), projectId)
+    return {"projectId": projectId, "rags": rags}
 
 
 def heldJobIdOf(jobs: list[Document]) -> str | None:

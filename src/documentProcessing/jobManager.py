@@ -4,14 +4,16 @@
 
     created = getJobManager().createJob(job)
     busy = getJobManager().isHeld(jobId)
+    started = getJobManager().isRunning(jobId)
     deleted = getJobManager().interruptAndDelete(jobId)
 
-Three entry points, and nothing else is meant to be called from outside:
+Four entry points, and nothing else is meant to be called from outside:
 
 * `createJob` puts a job on the pending queue, then starts waiting jobs
   while fewer than `maxRunning` are running. When none can run, it just
   returns; the job waits.
-* `isHeld` says whether a job is waiting or running here.
+* `isHeld` says whether a job is waiting or running here, and `isRunning`
+  whether it has started.
 * `interruptAndDelete` forgets a job: a waiting one never runs, a running
   one is stopped. Its slot is freed and the next waiting job started at
   once, not when the stopped job has finished winding down.
@@ -78,6 +80,10 @@ class JobManager:
     def isHeld(self, jobId: str) -> bool:
         """Whether the job with `jobId` is waiting or running here."""
         return jobId in self.heldJobs
+
+    def isRunning(self, jobId: str) -> bool:
+        """Whether the job with `jobId` has started and holds a slot."""
+        return jobId in self.runningJobs
 
     def interruptAndDelete(self, jobId: str) -> bool:
         """Stop the job, forget it, and start the next waiting job.

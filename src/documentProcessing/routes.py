@@ -7,6 +7,7 @@ path, and a job or a rag is addressed under them:
     POST   /rag/{accountUuid}/{projectId}/jobs/{jobId}/submit   submit
     GET    /rag/{accountUuid}/{projectId}/jobs/{jobId}/status   status
     DELETE /rag/{accountUuid}/{projectId}/jobs/{jobId}          delete job
+    GET    /rag/{accountUuid}/{projectId}/rags                  list rags
     DELETE /rag/{accountUuid}/{projectId}/rags/{ragId}          delete rag
 """
 
@@ -19,6 +20,7 @@ from documentProcessing import service
 from documentProcessing.model import (
     DeleteRagJobResponse,
     DeleteRagResponse,
+    ListRagsResponse,
     RagJobResponse,
     SubmitRagJobRequest,
 )
@@ -36,7 +38,6 @@ ERROR_STATUS_CODES = {
     service.ERROR_NOT_FOUND: 404,
     service.ERROR_FORBIDDEN: 403,
     service.ERROR_CONFLICT: 409,
-    service.ERROR_NOT_IMPLEMENTED: 501,
     # A store this service relies on, Pinecone, did not finish its part.
     service.ERROR_INCOMPLETE: 502,
 }
@@ -181,12 +182,12 @@ async def getRagJobStatus(
 @router.delete(
     "/{accountUuid}/{projectId}/jobs/{jobId}",
     response_model=DeleteRagJobResponse,
-    summary="Interrupt and delete a rag job",
+    summary="Delete a rag job that has not started",
 )
 async def deleteRagJob(
     request: Request, accountUuid: str, projectId: str, jobId: str
 ) -> dict | JSONResponse:
-    """Stop the job if it is still going, then delete it."""
+    """Delete a job that has not started, and the empty rag made with it."""
     logRequest(
         request,
         {"accountUuid": accountUuid, "projectId": projectId, "jobId": jobId},
@@ -200,6 +201,27 @@ async def deleteRagJob(
             errorResponse(STATUS_INTERNAL_ERROR, INTERNAL_ERROR_DETAIL),
         )
     return logResponse(request, toResponse(deleted))
+
+
+@router.get(
+    "/{accountUuid}/{projectId}/rags",
+    response_model=ListRagsResponse,
+    summary="List a project's rags",
+)
+async def listRags(
+    request: Request, accountUuid: str, projectId: str
+) -> dict | JSONResponse:
+    """Every rag of the project, and the state each is in."""
+    logRequest(request, {"accountUuid": accountUuid, "projectId": projectId})
+    try:
+        listed = await service.listRags(accountUuid, projectId)
+    except Exception:
+        LOGGER.exception("Listing the rags of project %s failed.", projectId)
+        return logResponse(
+            request,
+            errorResponse(STATUS_INTERNAL_ERROR, INTERNAL_ERROR_DETAIL),
+        )
+    return logResponse(request, toResponse(listed))
 
 
 @router.delete(
