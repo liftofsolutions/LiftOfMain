@@ -41,7 +41,7 @@ const ragsValidator = {
       name: { bsonType: "string", minLength: 1, maxLength: 120 },
       description: { bsonType: "string", maxLength: 2000 },
       country: { bsonType: "string", pattern: "^[A-Z]{2}$" }, // missing = every country
-      status: { enum: ["indexing", "ready", "failed"] },
+      status: { enum: ["indexing", "ready", "failed", "deleting"] },
       created_by: uuid,        // FK → users._id
       ...timestamps,
     },

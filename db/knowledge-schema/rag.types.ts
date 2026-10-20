@@ -21,7 +21,7 @@ export interface PineconeIndex {
 // ---------- rags ----------
 // A knowledge base. A project can have many.
 
-export type RagStatus = "indexing" | "ready" | "failed";
+export type RagStatus = "indexing" | "ready" | "failed" | "deleting"; // deleting: being removed, chunks first
 
 export interface Rag {
   _id: string;               // PK. UUID v4

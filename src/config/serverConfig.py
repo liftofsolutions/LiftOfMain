@@ -234,22 +234,38 @@ def requireSetting(value: str, envVarName: str, purpose: str) -> str:
 
 
 def requireCount(
-    value: str, envVarName: str, default: int, minimum: int
+    value: str,
+    envVarName: str,
+    default: int,
+    minimum: int,
+    maximum: int | None = None,
 ) -> int:
     """`value` as a whole number, or `default` when it is not set.
 
     Raises:
         ConfigurationError: If it is set to anything but a whole number of
-            at least `minimum`.
+            at least `minimum` and, when one is given, at most `maximum`.
     """
     if not value:
         return default
-    if not value.strip().isdigit() or int(value) < minimum:
-        raise ConfigurationError(
-            f"${envVarName} is {value!r}; expected a whole number of at "
-            f"least {minimum}."
+    # Not isdigit: it passes digits such as "²" that int() rejects.
+    digits = value.strip()
+    count = int(digits) if digits.isdecimal() else None
+    if (
+        count is None
+        or count < minimum
+        or (maximum is not None and count > maximum)
+    ):
+        expected = (
+            f"of at least {minimum}"
+            if maximum is None
+            else f"from {minimum} to {maximum}"
         )
-    return int(value)
+        raise ConfigurationError(
+            f"${envVarName} is {value!r}; expected a whole number "
+            f"{expected}."
+        )
+    return count
 
 
 def buildFirestoreAdapter(**overrides) -> FirestoreAdapter:

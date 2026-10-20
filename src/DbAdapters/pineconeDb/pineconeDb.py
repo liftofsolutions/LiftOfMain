@@ -10,13 +10,15 @@ beside it speaks to the index; nothing outside this folder builds one, and
     records = await getPineconeDb().fetch(namespace, ids)
     await getPineconeDb().update(namespace, recordId, metadata)
     deleted = await getPineconeDb().delete(namespace, ids)
+    ids = await getPineconeDb().listIds(namespace)
 
 `getPineconeDb` hands out one shared `PineconeDb`. Each operation is cut
 into jobs no bigger than one Pinecone request - `RECORDS_PER_ADD` records,
 `IDS_PER_REQUEST` ids, one record per update - and every job goes on one
-queue. `MAX_CONNECTIONS` workers take jobs off it, each over its own
-connection, so however many callers there are, no more than that many
-requests are ever in flight.
+queue; a listing is one job, however many pages it walks.
+`MAX_CONNECTIONS` workers take jobs off it, each over its own connection,
+so however many callers there are, no more than that many requests are
+ever in flight.
 
 Jobs on the same record run in the order they were made. A job depends on
 every earlier unfinished job that touches any of its records, in the same
@@ -24,6 +26,9 @@ namespace, so a delete made after an add of the same id never overtakes it,
 and a fetch made after a write sees that write. Jobs on different records do
 not wait for each other. A job waits for the earlier one to finish, not to
 succeed: a delete after a failed add still runs.
+
+A listing touches no record by id, so it waits for nothing, and like any
+read it may lag writes made just before it.
 
 A job with nothing to wait for goes straight on the queue; one that depends
 on others is held off it, and goes on when the last of them finishes. So a
@@ -70,6 +75,7 @@ OPERATION_ADD = "add"
 OPERATION_FETCH = "fetch"
 OPERATION_UPDATE = "update"
 OPERATION_DELETE = "delete"
+OPERATION_LIST = "list"
 
 
 class PineconeDbError(RuntimeError):
@@ -95,6 +101,8 @@ class PineconeJob:
 
 def recordIdsOf(operation: str, payload: Any) -> list[str]:
     """The ids of the records a job's payload touches."""
+    if operation == OPERATION_LIST:
+        return []
     if operation == OPERATION_ADD:
         recordIds = [
             record.get("_id") or record.get("id") for record in payload
@@ -165,6 +173,13 @@ class PineconeDb:
             OPERATION_DELETE, namespace, ids, IDS_PER_REQUEST
         )
         return sum(results)
+
+    async def listIds(self, namespace: str) -> list[str]:
+        """Every record id in `namespace`; none for one never written to."""
+        [recordIds] = await self._submitAll(
+            OPERATION_LIST, namespace, [namespace], 1
+        )
+        return recordIds
 
     async def close(self) -> None:
         """Stop the workers, fail what is still queued, close the connection."""
@@ -331,6 +346,8 @@ class PineconeDb:
                     f"failed: {outcome.failures[0].message}"
                 )
             return outcome.appliedCount
+        if job.operation == OPERATION_LIST:
+            return await self._adapter.listVectorIds(namespace=job.namespace)
         raise PineconeDbError(f"No Pinecone operation {job.operation!r}.")
 
 
