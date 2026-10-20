@@ -1,0 +1,29 @@
+{
+  "_id": "8f3c2a1e-5b7d-4c9a-a1f2-3e6b9d0c7a41",
+  "display_name": "Asha Rao",
+  "email": "asha@example.com",
+  "identities": [
+    {
+      "provider": "google",
+      "provider_uid": "kX9vQ2mT7pLwR4nB8cZ1yH6dF3s0",
+      "created_at": "2026-10-04T11:50:00Z",
+      "updated_at": "2026-10-04T11:50:00Z"
+    }
+  ],
+  "profile": {
+    "dob": "1998-05-14",
+    "gender": "female",
+    "created_at": "2026-10-04T11:52:00Z",
+    "updated_at": "2026-10-04T11:52:00Z"
+  },
+  "settings": {
+    "schema_version": 1,
+    "theme": "dark",
+    "timezone": "Asia/Kolkata",
+    "notifications": { "email": false },
+    "created_at": "2026-10-04T11:55:00Z",
+    "updated_at": "2026-10-04T11:58:00Z"
+  },
+  "created_at": "2026-10-04T11:50:00Z",
+  "updated_at": "2026-10-04T11:58:00Z"
+}

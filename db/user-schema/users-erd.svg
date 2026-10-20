@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="636" viewBox="0 0 860 636" role="img" aria-labelledby="er-title er-desc">
+        <title id="er-title">users entity relationship diagram</title>
+        <desc id="er-desc">A user has one or more identities, zero or one profile, and zero or one settings object. All three are embedded in the user document.</desc>
+        <style>
+.er-box { fill: #FFFFFF; stroke: #B9C2CC; stroke-width: 1; }
+.er-head-main { fill: #0B6B6B; }
+.er-head { fill: #E2EFEE; }
+.er-sep { stroke: #E1E6EB; stroke-width: 1; }
+.er-linkrow { fill: #E2EFEE; }
+.er-title-main { font-family: "Instrument Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif; font-size: 16px; font-weight: 600; fill: #FFFFFF; }
+.er-tag-main { font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, "DejaVu Sans", sans-serif; font-size: 12px; fill: #FFFFFF; opacity: 0.85; }
+.er-title { font-family: "Instrument Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif; font-size: 16px; font-weight: 600; fill: #17202A; }
+.er-tag { font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, "DejaVu Sans", sans-serif; font-size: 12px; fill: #5A6474; }
+.er-f { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12.5px; fill: #17202A; }
+.er-f.link { fill: #0B6B6B; font-weight: 500; }
+.er-ty { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12px; fill: #5A6474; }
+.er-pk { fill: #0B6B6B; font-weight: 500; }
+.er-line { stroke: #0B6B6B; stroke-width: 1.5; fill: none; }
+.er-zero { fill: #FFFFFF; stroke: #0B6B6B; stroke-width: 1.5; }
+.er-card { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12px; font-weight: 500; fill: #0B6B6B; }
+        </style>
+        <rect width="860" height="636" fill="#FFFFFF"/>
+
+        <!-- users -->
+        <rect class="er-box" x="24" y="172" width="300" height="292" rx="8"/>
+        <path class="er-head-main" d="M24 180 Q24 172 32 172 H316 Q324 172 324 180 V212 H24 Z"/>
+        <text class="er-title-main" x="38" y="197">users</text>
+        <text class="er-tag-main" x="310" y="197" text-anchor="end">collection</text>
+        <rect class="er-linkrow" x="25" y="324" width="298" height="84"/>
+        <line class="er-sep" x1="24" y1="240" x2="324" y2="240"/>
+        <line class="er-sep" x1="24" y1="268" x2="324" y2="268"/>
+        <line class="er-sep" x1="24" y1="296" x2="324" y2="296"/>
+        <line class="er-sep" x1="24" y1="324" x2="324" y2="324"/>
+        <line class="er-sep" x1="24" y1="352" x2="324" y2="352"/>
+        <line class="er-sep" x1="24" y1="380" x2="324" y2="380"/>
+        <line class="er-sep" x1="24" y1="408" x2="324" y2="408"/>
+        <line class="er-sep" x1="24" y1="436" x2="324" y2="436"/>
+        <text class="er-f" x="38" y="230">_id</text><text class="er-ty" x="310" y="230" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+        <text class="er-f" x="38" y="258">display_name</text><text class="er-ty" x="310" y="258" text-anchor="end">string</text>
+        <text class="er-f" x="38" y="286">email?</text><text class="er-ty" x="310" y="286" text-anchor="end">string</text>
+        <text class="er-f" x="38" y="314">avatar_url?</text><text class="er-ty" x="310" y="314" text-anchor="end">string</text>
+        <text class="er-f link" x="38" y="342">identities</text><text class="er-ty" x="310" y="342" text-anchor="end">array</text>
+        <text class="er-f link" x="38" y="370">profile?</text><text class="er-ty" x="310" y="370" text-anchor="end">object</text>
+        <text class="er-f link" x="38" y="398">settings?</text><text class="er-ty" x="310" y="398" text-anchor="end">object</text>
+        <text class="er-f" x="38" y="426">created_at</text><text class="er-ty" x="310" y="426" text-anchor="end">date</text>
+        <text class="er-f" x="38" y="454">updated_at</text><text class="er-ty" x="310" y="454" text-anchor="end">date</text>
+
+        <!-- identities -->
+        <rect class="er-box" x="536" y="24" width="300" height="152" rx="8"/>
+        <path class="er-head" d="M536 32 Q536 24 544 24 H828 Q836 24 836 32 V64 H536 Z"/>
+        <text class="er-title" x="550" y="49">identities</text>
+        <text class="er-tag" x="822" y="49" text-anchor="end">array, 1 or more</text>
+        <line class="er-sep" x1="536" y1="64" x2="836" y2="64"/>
+        <line class="er-sep" x1="536" y1="92" x2="836" y2="92"/>
+        <line class="er-sep" x1="536" y1="120" x2="836" y2="120"/>
+        <line class="er-sep" x1="536" y1="148" x2="836" y2="148"/>
+        <text class="er-f" x="550" y="82">provider</text><text class="er-ty" x="822" y="82" text-anchor="end">google | email | github</text>
+        <text class="er-f" x="550" y="110">provider_uid</text><text class="er-ty" x="822" y="110" text-anchor="end">string</text>
+        <text class="er-f" x="550" y="138">created_at</text><text class="er-ty" x="822" y="138" text-anchor="end">date</text>
+        <text class="er-f" x="550" y="166">updated_at</text><text class="er-ty" x="822" y="166" text-anchor="end">date</text>
+
+        <!-- profile -->
+        <rect class="er-box" x="536" y="200" width="300" height="152" rx="8"/>
+        <path class="er-head" d="M536 208 Q536 200 544 200 H828 Q836 200 836 208 V240 H536 Z"/>
+        <text class="er-title" x="550" y="225">profile</text>
+        <text class="er-tag" x="822" y="225" text-anchor="end">object, optional</text>
+        <line class="er-sep" x1="536" y1="240" x2="836" y2="240"/>
+        <line class="er-sep" x1="536" y1="268" x2="836" y2="268"/>
+        <line class="er-sep" x1="536" y1="296" x2="836" y2="296"/>
+        <line class="er-sep" x1="536" y1="324" x2="836" y2="324"/>
+        <text class="er-f" x="550" y="258">dob?</text><text class="er-ty" x="822" y="258" text-anchor="end">YYYY-MM-DD</text>
+        <text class="er-f" x="550" y="286">gender?</text><text class="er-ty" x="822" y="286" text-anchor="end">string</text>
+        <text class="er-f" x="550" y="314">created_at</text><text class="er-ty" x="822" y="314" text-anchor="end">date</text>
+        <text class="er-f" x="550" y="342">updated_at</text><text class="er-ty" x="822" y="342" text-anchor="end">date</text>
+
+        <!-- settings -->
+        <rect class="er-box" x="536" y="374" width="300" height="236" rx="8"/>
+        <path class="er-head" d="M536 382 Q536 374 544 374 H828 Q836 374 836 382 V414 H536 Z"/>
+        <text class="er-title" x="550" y="399">settings</text>
+        <text class="er-tag" x="822" y="399" text-anchor="end">object, optional</text>
+        <line class="er-sep" x1="536" y1="414" x2="836" y2="414"/>
+        <line class="er-sep" x1="536" y1="442" x2="836" y2="442"/>
+        <line class="er-sep" x1="536" y1="470" x2="836" y2="470"/>
+        <line class="er-sep" x1="536" y1="498" x2="836" y2="498"/>
+        <line class="er-sep" x1="536" y1="526" x2="836" y2="526"/>
+        <line class="er-sep" x1="536" y1="554" x2="836" y2="554"/>
+        <line class="er-sep" x1="536" y1="582" x2="836" y2="582"/>
+        <text class="er-f" x="550" y="432">schema_version</text><text class="er-ty" x="822" y="432" text-anchor="end">int</text>
+        <text class="er-f" x="550" y="460">theme?</text><text class="er-ty" x="822" y="460" text-anchor="end">light | dark | system</text>
+        <text class="er-f" x="550" y="488">language?</text><text class="er-ty" x="822" y="488" text-anchor="end">string</text>
+        <text class="er-f" x="550" y="516">timezone?</text><text class="er-ty" x="822" y="516" text-anchor="end">string</text>
+        <text class="er-f" x="550" y="544">notifications?</text><text class="er-ty" x="822" y="544" text-anchor="end">{ email, push }</text>
+        <text class="er-f" x="550" y="572">created_at</text><text class="er-ty" x="822" y="572" text-anchor="end">date</text>
+        <text class="er-f" x="550" y="600">updated_at</text><text class="er-ty" x="822" y="600" text-anchor="end">date</text>
+
+        <!-- users to identities: one to one-or-more -->
+        <path class="er-line" d="M324 338 H360 V44 H536"/>
+        <line class="er-line" x1="333" y1="332" x2="333" y2="344"/>
+        <line class="er-line" x1="339" y1="332" x2="339" y2="344"/>
+        <line class="er-line" x1="514" y1="37" x2="514" y2="51"/>
+        <path class="er-line" d="M522 44 L536 36 M522 44 L536 52"/>
+        <text class="er-card" x="440" y="34" text-anchor="middle">1 : N</text>
+
+        <!-- users to profile: one to zero-or-one -->
+        <path class="er-line" d="M324 366 H385 V220 H536"/>
+        <line class="er-line" x1="333" y1="360" x2="333" y2="372"/>
+        <line class="er-line" x1="339" y1="360" x2="339" y2="372"/>
+        <line class="er-line" x1="527" y1="213" x2="527" y2="227"/>
+        <circle class="er-zero" cx="515" cy="220" r="4.5"/>
+        <text class="er-card" x="455" y="210" text-anchor="middle">1 : 0..1</text>
+
+        <!-- users to settings: one to zero-or-one -->
+        <path class="er-line" d="M324 394 H536"/>
+        <line class="er-line" x1="333" y1="388" x2="333" y2="400"/>
+        <line class="er-line" x1="339" y1="388" x2="339" y2="400"/>
+        <line class="er-line" x1="527" y1="387" x2="527" y2="401"/>
+        <circle class="er-zero" cx="515" cy="394" r="4.5"/>
+        <text class="er-card" x="440" y="384" text-anchor="middle">1 : 0..1</text>
+      </svg>

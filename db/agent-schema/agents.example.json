@@ -1,0 +1,182 @@
+{
+  "node_types": [
+    {
+      "_id": "9788e43c-dbf2-48d9-bed0-5da33fdc566a",
+      "category": "chat_model",
+      "handler": "anthropic_chat",
+      "name": "Anthropic chat",
+      "config": {
+        "model": "<model id>",
+        "temperature": 0.7,
+        "max_tokens": 1024
+      },
+      "is_active": true,
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-10-01T09:00:00Z"
+    },
+    {
+      "_id": "69f06d0f-56e5-4778-9887-2d24c1d824e6",
+      "category": "tool",
+      "handler": "tavily_search",
+      "name": "Tavily search",
+      "config": {
+        "max_results": 5
+      },
+      "is_active": true,
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-10-01T09:00:00Z"
+    },
+    {
+      "_id": "1b06fcd1-73a2-4703-a9bc-00ae5a96a10a",
+      "category": "io",
+      "handler": "whatsapp",
+      "name": "WhatsApp",
+      "config": {
+        "api_version": "v21.0",
+        "reply_format": "text"
+      },
+      "is_active": true,
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-10-01T09:00:00Z"
+    },
+    {
+      "_id": "6d0153fb-f9bb-476e-8e9b-8554d856b647",
+      "category": "io",
+      "handler": "cron",
+      "name": "Schedule",
+      "config": {
+        "timezone": "UTC"
+      },
+      "is_active": true,
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-10-01T09:00:00Z"
+    },
+    {
+      "_id": "ac2eb416-fe57-4385-a576-8ff9c9dba888",
+      "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+      "category": "tool",
+      "handler": "http_api",
+      "name": "Acme CRM lookup",
+      "config": {
+        "method": "GET",
+        "url": "https://crm.acme.example/api/customers",
+        "timeout_ms": 5000
+      },
+      "is_active": true,
+      "created_at": "2026-10-05T06:30:00Z",
+      "updated_at": "2026-10-05T06:30:00Z"
+    }
+  ],
+  "credentials": [
+    {
+      "_id": "f833e685-a764-47c5-a765-5a1bda2c8ce4",
+      "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+      "name": "Acme WhatsApp",
+      "values": {
+        "phone_number_id": "111222333",
+        "business_account_id": "998877"
+      },
+      "secret_values": {
+        "ciphertext": "<base64>",
+        "iv": "<base64>",
+        "tag": "<base64>",
+        "wrapped_dek": "<base64>",
+        "kms_key_id": "projects/acme-prod/locations/global/keyRings/app/cryptoKeys/credentials"
+      },
+      "created_by": "8f3c2a1e-5b7d-4c9a-a1f2-3e6b9d0c7a41",
+      "created_at": "2026-10-05T06:30:00Z",
+      "updated_at": "2026-10-05T06:30:00Z"
+    }
+  ],
+  "agent_template": {
+    "_id": "8f32ea63-10e7-4105-a05d-ea0c7c02ff52",
+    "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+    "name": "Acme sales assistant",
+    "description": "Answers product questions on WhatsApp and sends a daily follow-up.",
+    "rag_enabled": true,
+    "nodes": [
+      {
+        "id": "473b3fd6-5886-40fc-bd5a-a5d414591bf2",
+        "node_type_id": "9788e43c-dbf2-48d9-bed0-5da33fdc566a",
+        "name": "reply",
+        "config": {
+          "temperature": 0.3,
+          "system_prompt": "You are Acme's sales assistant. Answer briefly and politely."
+        },
+        "created_at": "2026-10-05T06:30:00Z",
+        "updated_at": "2026-10-05T06:30:00Z"
+      },
+      {
+        "id": "bffe1424-267a-4ef6-9c05-1cc9c9a62f15",
+        "node_type_id": "69f06d0f-56e5-4778-9887-2d24c1d824e6",
+        "name": "web_search",
+        "config": {},
+        "created_at": "2026-10-05T06:30:00Z",
+        "updated_at": "2026-10-05T06:30:00Z"
+      },
+      {
+        "id": "8684a076-e476-414e-9769-f2fe79ae5f90",
+        "node_type_id": "ac2eb416-fe57-4385-a576-8ff9c9dba888",
+        "name": "crm_lookup",
+        "config": {},
+        "created_at": "2026-10-05T06:30:00Z",
+        "updated_at": "2026-10-05T06:30:00Z"
+      },
+      {
+        "id": "9e60cc8c-e30f-44f7-b025-2c613f181635",
+        "node_type_id": "1b06fcd1-73a2-4703-a9bc-00ae5a96a10a",
+        "credential_id": "f833e685-a764-47c5-a765-5a1bda2c8ce4",
+        "name": "whatsapp",
+        "config": {},
+        "created_at": "2026-10-05T06:30:00Z",
+        "updated_at": "2026-10-05T06:30:00Z"
+      },
+      {
+        "id": "9ffddd05-5dee-4924-b264-e5226d9aa1a7",
+        "node_type_id": "6d0153fb-f9bb-476e-8e9b-8554d856b647",
+        "name": "daily_followup",
+        "config": {
+          "cron": "0 9 * * *",
+          "timezone": "Asia/Kolkata"
+        },
+        "created_at": "2026-10-05T06:30:00Z",
+        "updated_at": "2026-10-05T06:30:00Z"
+      }
+    ],
+    "triggers": [
+      {
+        "id": "d9d81456-5f87-4b46-80e1-0c4d39b36ec7",
+        "node_id": "9e60cc8c-e30f-44f7-b025-2c613f181635",
+        "event": "message.received",
+        "enabled": true,
+        "created_at": "2026-10-05T06:30:00Z",
+        "updated_at": "2026-10-05T06:30:00Z"
+      },
+      {
+        "id": "564c8855-8140-44ad-94a9-da518b943a79",
+        "node_id": "9ffddd05-5dee-4924-b264-e5226d9aa1a7",
+        "event": "schedule",
+        "enabled": true,
+        "created_at": "2026-10-05T06:30:00Z",
+        "updated_at": "2026-10-05T06:30:00Z"
+      }
+    ],
+    "is_active": true,
+    "created_at": "2026-10-05T06:30:00Z",
+    "updated_at": "2026-10-05T06:30:00Z"
+  },
+  "agent": {
+    "_id": "88f95300-7453-4609-b685-2c424cc181d5",
+    "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+    "template_id": "8f32ea63-10e7-4105-a05d-ea0c7c02ff52",
+    "name": "Acme Sales Bot",
+    "status": "active",
+    "created_by": "8f3c2a1e-5b7d-4c9a-a1f2-3e6b9d0c7a41",
+    "created_at": "2026-10-05T06:30:00Z",
+    "updated_at": "2026-10-05T06:30:00Z"
+  },
+  "webhook_urls": {
+    "message.received": "/hooks/a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34/88f95300-7453-4609-b685-2c424cc181d5/d9d81456-5f87-4b46-80e1-0c4d39b36ec7",
+    "schedule": "/hooks/a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34/88f95300-7453-4609-b685-2c424cc181d5/564c8855-8140-44ad-94a9-da518b943a79"
+  }
+}

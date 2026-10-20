@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="1126" viewBox="0 0 920 1126" role="img" aria-label="Agent schema diagram">
+        <title>Agent schema diagram</title>
+        <desc>Agent templates embed nodes and triggers; each trigger references one of the template's nodes. Each node is an instance of a node type (which supplies default config) and can point to a project credential. Templates and node types belong to the platform or to one project; credentials and agents belong to a project, and each agent runs one template. projects is drawn twice to keep lines from crossing.</desc>
+        <style>
+.er-box { fill: #FFFFFF; stroke: #B9C2CC; stroke-width: 1; }
+.er-box-ref { fill: #FFFFFF; stroke: #5A6474; stroke-width: 1; stroke-dasharray: 5 4; }
+.er-head-main { fill: #0B6B6B; }
+.er-head { fill: #E2EFEE; }
+.er-head-ref { fill: #EDF0F3; }
+.er-sep { stroke: #E1E6EB; stroke-width: 1; }
+.er-linkrow { fill: #E2EFEE; }
+.er-title-main { font-family: "Instrument Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif; font-size: 16px; font-weight: 600; fill: #FFFFFF; }
+.er-tag-main { font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, "DejaVu Sans", sans-serif; font-size: 12px; fill: #FFFFFF; opacity: 0.85; }
+.er-title { font-family: "Instrument Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif; font-size: 16px; font-weight: 600; fill: #17202A; }
+.er-tag { font-family: "IBM Plex Sans", "Segoe UI", Roboto, Arial, "DejaVu Sans", sans-serif; font-size: 12px; fill: #5A6474; }
+.er-f { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12.5px; fill: #17202A; }
+.er-f.link { fill: #0B6B6B; font-weight: 500; }
+.er-ty { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12px; fill: #5A6474; }
+.er-pk { fill: #0B6B6B; font-weight: 500; }
+.er-line { stroke: #0B6B6B; stroke-width: 1.5; fill: none; }
+.er-zero { fill: #FFFFFF; stroke: #0B6B6B; stroke-width: 1.5; }
+.er-card { font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 12px; font-weight: 500; fill: #0B6B6B; }
+        </style>
+        <rect width="920" height="1126" fill="#FFFFFF"/>
+
+        <rect class="er-box-ref" x="320" y="24" width="226" height="68" rx="8"/>
+        <path class="er-head-ref" d="M320.5 32 Q320.5 24.5 328 24.5 H538 Q545.5 24.5 545.5 32 V64 H320.5 Z"/>
+        <text class="er-title" x="334" y="49">projects</text>
+        <text class="er-tag" x="532" y="49" text-anchor="end">from Project schema</text>
+        <line class="er-sep" x1="320" y1="64" x2="546" y2="64"/>
+        <text class="er-f" x="334" y="82">_id</text><text class="er-ty" x="532" y="82" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+
+        <rect class="er-box" x="24" y="152" width="226" height="320" rx="8"/>
+        <rect class="er-linkrow" x="25" y="220" width="224" height="28"/>
+        <rect class="er-linkrow" x="25" y="332" width="224" height="28"/>
+        <rect class="er-linkrow" x="25" y="360" width="224" height="28"/>
+        <path class="er-head-main" d="M24 160 Q24 152 32 152 H242 Q250 152 250 160 V192 H24 Z"/>
+        <text class="er-title-main" x="38" y="177">agent_templates</text>
+        <text class="er-tag-main" x="236" y="177" text-anchor="end">collection</text>
+        <line class="er-sep" x1="24" y1="220" x2="250" y2="220"/>
+        <line class="er-sep" x1="24" y1="248" x2="250" y2="248"/>
+        <line class="er-sep" x1="24" y1="276" x2="250" y2="276"/>
+        <line class="er-sep" x1="24" y1="304" x2="250" y2="304"/>
+        <line class="er-sep" x1="24" y1="332" x2="250" y2="332"/>
+        <line class="er-sep" x1="24" y1="360" x2="250" y2="360"/>
+        <line class="er-sep" x1="24" y1="388" x2="250" y2="388"/>
+        <line class="er-sep" x1="24" y1="416" x2="250" y2="416"/>
+        <line class="er-sep" x1="24" y1="444" x2="250" y2="444"/>
+        <text class="er-f" x="38" y="210">_id</text><text class="er-ty" x="236" y="210" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+        <text class="er-f link" x="38" y="238">project_id?</text><text class="er-ty" x="236" y="238" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="38" y="266">name</text><text class="er-ty" x="236" y="266" text-anchor="end">string</text>
+        <text class="er-f" x="38" y="294">description?</text><text class="er-ty" x="236" y="294" text-anchor="end">string</text>
+        <text class="er-f" x="38" y="322">rag_enabled</text><text class="er-ty" x="236" y="322" text-anchor="end">bool</text>
+        <text class="er-f link" x="38" y="350">nodes</text><text class="er-ty" x="236" y="350" text-anchor="end">node[]</text>
+        <text class="er-f link" x="38" y="378">triggers</text><text class="er-ty" x="236" y="378" text-anchor="end">trigger[]</text>
+        <text class="er-f" x="38" y="406">is_active</text><text class="er-ty" x="236" y="406" text-anchor="end">bool</text>
+        <text class="er-f" x="38" y="434">created_at</text><text class="er-ty" x="236" y="434" text-anchor="end">date</text>
+        <text class="er-f" x="38" y="462">updated_at</text><text class="er-ty" x="236" y="462" text-anchor="end">date</text>
+
+        <rect class="er-box" x="320" y="326" width="226" height="236" rx="8"/>
+        <rect class="er-linkrow" x="321" y="394" width="224" height="28"/>
+        <rect class="er-linkrow" x="321" y="422" width="224" height="28"/>
+        <path class="er-head" d="M320.5 334 Q320.5 326.5 328 326.5 H538 Q545.5 326.5 545.5 334 V366 H320.5 Z"/>
+        <text class="er-title" x="334" y="351">node</text>
+        <text class="er-tag" x="532" y="351" text-anchor="end">embedded in templates</text>
+        <line class="er-sep" x1="320" y1="366" x2="546" y2="366"/>
+        <line class="er-sep" x1="320" y1="394" x2="546" y2="394"/>
+        <line class="er-sep" x1="320" y1="422" x2="546" y2="422"/>
+        <line class="er-sep" x1="320" y1="450" x2="546" y2="450"/>
+        <line class="er-sep" x1="320" y1="478" x2="546" y2="478"/>
+        <line class="er-sep" x1="320" y1="506" x2="546" y2="506"/>
+        <line class="er-sep" x1="320" y1="534" x2="546" y2="534"/>
+        <text class="er-f" x="334" y="384">id</text><text class="er-ty" x="532" y="384" text-anchor="end">uuid</text>
+        <text class="er-f link" x="334" y="412">node_type_id</text><text class="er-ty" x="532" y="412" text-anchor="end">uuid FK</text>
+        <text class="er-f link" x="334" y="440">credential_id?</text><text class="er-ty" x="532" y="440" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="334" y="468">name</text><text class="er-ty" x="532" y="468" text-anchor="end">string</text>
+        <text class="er-f" x="334" y="496">config</text><text class="er-ty" x="532" y="496" text-anchor="end">object</text>
+        <text class="er-f" x="334" y="524">created_at</text><text class="er-ty" x="532" y="524" text-anchor="end">date</text>
+        <text class="er-f" x="334" y="552">updated_at</text><text class="er-ty" x="532" y="552" text-anchor="end">date</text>
+
+        <rect class="er-box" x="320" y="610" width="226" height="208" rx="8"/>
+        <rect class="er-linkrow" x="321" y="678" width="224" height="28"/>
+        <path class="er-head" d="M320.5 618 Q320.5 610.5 328 610.5 H538 Q545.5 610.5 545.5 618 V650 H320.5 Z"/>
+        <text class="er-title" x="334" y="635">trigger</text>
+        <text class="er-tag" x="532" y="635" text-anchor="end">embedded in templates</text>
+        <line class="er-sep" x1="320" y1="650" x2="546" y2="650"/>
+        <line class="er-sep" x1="320" y1="678" x2="546" y2="678"/>
+        <line class="er-sep" x1="320" y1="706" x2="546" y2="706"/>
+        <line class="er-sep" x1="320" y1="734" x2="546" y2="734"/>
+        <line class="er-sep" x1="320" y1="762" x2="546" y2="762"/>
+        <line class="er-sep" x1="320" y1="790" x2="546" y2="790"/>
+        <text class="er-f" x="334" y="668">id</text><text class="er-ty" x="532" y="668" text-anchor="end">uuid</text>
+        <text class="er-f link" x="334" y="696">node_id</text><text class="er-ty" x="532" y="696" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="334" y="724">event</text><text class="er-ty" x="532" y="724" text-anchor="end">string</text>
+        <text class="er-f" x="334" y="752">enabled</text><text class="er-ty" x="532" y="752" text-anchor="end">bool</text>
+        <text class="er-f" x="334" y="780">created_at</text><text class="er-ty" x="532" y="780" text-anchor="end">date</text>
+        <text class="er-f" x="334" y="808">updated_at</text><text class="er-ty" x="532" y="808" text-anchor="end">date</text>
+
+        <rect class="er-box" x="636" y="354" width="260" height="292" rx="8"/>
+        <rect class="er-linkrow" x="637" y="422" width="258" height="28"/>
+        <path class="er-head-main" d="M636 362 Q636 354 644 354 H888 Q896 354 896 362 V394 H636 Z"/>
+        <text class="er-title-main" x="650" y="379">node_types</text>
+        <text class="er-tag-main" x="882" y="379" text-anchor="end">collection</text>
+        <line class="er-sep" x1="636" y1="422" x2="896" y2="422"/>
+        <line class="er-sep" x1="636" y1="450" x2="896" y2="450"/>
+        <line class="er-sep" x1="636" y1="478" x2="896" y2="478"/>
+        <line class="er-sep" x1="636" y1="506" x2="896" y2="506"/>
+        <line class="er-sep" x1="636" y1="534" x2="896" y2="534"/>
+        <line class="er-sep" x1="636" y1="562" x2="896" y2="562"/>
+        <line class="er-sep" x1="636" y1="590" x2="896" y2="590"/>
+        <line class="er-sep" x1="636" y1="618" x2="896" y2="618"/>
+        <text class="er-f" x="650" y="412">_id</text><text class="er-ty" x="882" y="412" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+        <text class="er-f link" x="650" y="440">project_id?</text><text class="er-ty" x="882" y="440" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="650" y="468">category</text><text class="er-ty" x="882" y="468" text-anchor="end">chat_model | tool | io</text>
+        <text class="er-f" x="650" y="496">handler</text><text class="er-ty" x="882" y="496" text-anchor="end">string</text>
+        <text class="er-f" x="650" y="524">name</text><text class="er-ty" x="882" y="524" text-anchor="end">string</text>
+        <text class="er-f" x="650" y="552">config</text><text class="er-ty" x="882" y="552" text-anchor="end">object</text>
+        <text class="er-f" x="650" y="580">is_active</text><text class="er-ty" x="882" y="580" text-anchor="end">bool</text>
+        <text class="er-f" x="650" y="608">created_at</text><text class="er-ty" x="882" y="608" text-anchor="end">date</text>
+        <text class="er-f" x="650" y="636">updated_at</text><text class="er-ty" x="882" y="636" text-anchor="end">date</text>
+
+        <rect class="er-box" x="24" y="520" width="226" height="292" rx="8"/>
+        <rect class="er-linkrow" x="25" y="588" width="224" height="28"/>
+        <rect class="er-linkrow" x="25" y="616" width="224" height="28"/>
+        <path class="er-head-main" d="M24 528 Q24 520 32 520 H242 Q250 520 250 528 V560 H24 Z"/>
+        <text class="er-title-main" x="38" y="545">agents</text>
+        <text class="er-tag-main" x="236" y="545" text-anchor="end">collection</text>
+        <line class="er-sep" x1="24" y1="588" x2="250" y2="588"/>
+        <line class="er-sep" x1="24" y1="616" x2="250" y2="616"/>
+        <line class="er-sep" x1="24" y1="644" x2="250" y2="644"/>
+        <line class="er-sep" x1="24" y1="672" x2="250" y2="672"/>
+        <line class="er-sep" x1="24" y1="700" x2="250" y2="700"/>
+        <line class="er-sep" x1="24" y1="728" x2="250" y2="728"/>
+        <line class="er-sep" x1="24" y1="756" x2="250" y2="756"/>
+        <line class="er-sep" x1="24" y1="784" x2="250" y2="784"/>
+        <text class="er-f" x="38" y="578">_id</text><text class="er-ty" x="236" y="578" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+        <text class="er-f link" x="38" y="606">project_id</text><text class="er-ty" x="236" y="606" text-anchor="end">uuid FK</text>
+        <text class="er-f link" x="38" y="634">template_id</text><text class="er-ty" x="236" y="634" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="38" y="662">name</text><text class="er-ty" x="236" y="662" text-anchor="end">string</text>
+        <text class="er-f" x="38" y="690">status</text><text class="er-ty" x="236" y="690" text-anchor="end">active | paused</text>
+        <text class="er-f" x="38" y="718">created_by</text><text class="er-ty" x="236" y="718" text-anchor="end">uuid FK → users</text>
+        <text class="er-f" x="38" y="746">created_at</text><text class="er-ty" x="236" y="746" text-anchor="end">date</text>
+        <text class="er-f" x="38" y="774">updated_at</text><text class="er-ty" x="236" y="774" text-anchor="end">date</text>
+        <text class="er-f" x="38" y="802">deleted_at?</text><text class="er-ty" x="236" y="802" text-anchor="end">date</text>
+
+        <rect class="er-box" x="636" y="694" width="260" height="292" rx="8"/>
+        <rect class="er-linkrow" x="637" y="762" width="258" height="28"/>
+        <path class="er-head-main" d="M636 702 Q636 694 644 694 H888 Q896 694 896 702 V734 H636 Z"/>
+        <text class="er-title-main" x="650" y="719">credentials</text>
+        <text class="er-tag-main" x="882" y="719" text-anchor="end">collection</text>
+        <line class="er-sep" x1="636" y1="762" x2="896" y2="762"/>
+        <line class="er-sep" x1="636" y1="790" x2="896" y2="790"/>
+        <line class="er-sep" x1="636" y1="818" x2="896" y2="818"/>
+        <line class="er-sep" x1="636" y1="846" x2="896" y2="846"/>
+        <line class="er-sep" x1="636" y1="874" x2="896" y2="874"/>
+        <line class="er-sep" x1="636" y1="902" x2="896" y2="902"/>
+        <line class="er-sep" x1="636" y1="930" x2="896" y2="930"/>
+        <line class="er-sep" x1="636" y1="958" x2="896" y2="958"/>
+        <text class="er-f" x="650" y="752">_id</text><text class="er-ty" x="882" y="752" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+        <text class="er-f link" x="650" y="780">project_id</text><text class="er-ty" x="882" y="780" text-anchor="end">uuid FK</text>
+        <text class="er-f" x="650" y="808">name</text><text class="er-ty" x="882" y="808" text-anchor="end">string</text>
+        <text class="er-f" x="650" y="836">values?</text><text class="er-ty" x="882" y="836" text-anchor="end">object</text>
+        <text class="er-f" x="650" y="864">secret_values</text><text class="er-ty" x="882" y="864" text-anchor="end">encrypted</text>
+        <text class="er-f" x="650" y="892">expires_at?</text><text class="er-ty" x="882" y="892" text-anchor="end">date</text>
+        <text class="er-f" x="650" y="920">created_by</text><text class="er-ty" x="882" y="920" text-anchor="end">uuid FK → users</text>
+        <text class="er-f" x="650" y="948">created_at</text><text class="er-ty" x="882" y="948" text-anchor="end">date</text>
+        <text class="er-f" x="650" y="976">updated_at</text><text class="er-ty" x="882" y="976" text-anchor="end">date</text>
+
+        <rect class="er-box-ref" x="320" y="1034" width="226" height="68" rx="8"/>
+        <path class="er-head-ref" d="M320.5 1042 Q320.5 1034.5 328 1034.5 H538 Q545.5 1034.5 545.5 1042 V1074 H320.5 Z"/>
+        <text class="er-title" x="334" y="1059">projects</text>
+        <text class="er-tag" x="532" y="1059" text-anchor="end">from Project schema</text>
+        <line class="er-sep" x1="320" y1="1074" x2="546" y2="1074"/>
+        <text class="er-f" x="334" y="1092">_id</text><text class="er-ty" x="532" y="1092" text-anchor="end">uuid <tspan class="er-pk">PK</tspan></text>
+
+        <path class="er-line" d="M320 78 L137 78 L137 152"/>
+        <line class="er-line" x1="311" y1="71" x2="311" y2="85"/>
+        <circle class="er-zero" cx="300" cy="78" r="4.5"/>
+        <path class="er-line" d="M137 139 L129 152 M137 139 L145 152"/>
+        <circle class="er-zero" cx="137" cy="131" r="4.5"/>
+        <text class="er-card" x="224.5" y="66" text-anchor="middle">0..1 : 0..N</text>
+
+        <path class="er-line" d="M546 78 L766 78 L766 354"/>
+        <line class="er-line" x1="555" y1="71" x2="555" y2="85"/>
+        <circle class="er-zero" cx="566" cy="78" r="4.5"/>
+        <path class="er-line" d="M766 341 L758 354 M766 341 L774 354"/>
+        <circle class="er-zero" cx="766" cy="333" r="4.5"/>
+        <text class="er-card" x="664.0" y="66" text-anchor="middle">0..1 : 0..N</text>
+
+        <path class="er-line" d="M250 346 L320 346"/>
+        <line class="er-line" x1="259" y1="340" x2="259" y2="352"/>
+        <line class="er-line" x1="265" y1="340" x2="265" y2="352"/>
+        <path class="er-line" d="M307 346 L320 338 M307 346 L320 354"/>
+        <line class="er-line" x1="301" y1="339" x2="301" y2="353"/>
+        <text class="er-card" x="285" y="334" text-anchor="middle">1 : N</text>
+
+        <path class="er-line" d="M250 374 L285 374 L285 630 L320 630"/>
+        <line class="er-line" x1="259" y1="368" x2="259" y2="380"/>
+        <line class="er-line" x1="265" y1="368" x2="265" y2="380"/>
+        <path class="er-line" d="M307 630 L320 622 M307 630 L320 638"/>
+        <circle class="er-zero" cx="299" cy="630" r="4.5"/>
+        <text class="er-card" x="293" y="600" text-anchor="start">1 : 0..N</text>
+
+        <path class="er-line" d="M433 562 L433 610"/>
+        <line class="er-line" x1="427" y1="571" x2="439" y2="571"/>
+        <line class="er-line" x1="427" y1="577" x2="439" y2="577"/>
+        <path class="er-line" d="M433 597 L425 610 M433 597 L441 610"/>
+        <circle class="er-zero" cx="433" cy="589" r="4.5"/>
+        <text class="er-card" x="447" y="590" text-anchor="start">1 : 0..N</text>
+
+        <path class="er-line" d="M636 408 L546 408"/>
+        <line class="er-line" x1="627" y1="402" x2="627" y2="414"/>
+        <line class="er-line" x1="621" y1="402" x2="621" y2="414"/>
+        <path class="er-line" d="M559 408 L546 400 M559 408 L546 416"/>
+        <circle class="er-zero" cx="567" cy="408" r="4.5"/>
+        <text class="er-card" x="591" y="396" text-anchor="middle">1 : 0..N</text>
+
+        <path class="er-line" d="M636 748 L591 748 L591 436 L546 436"/>
+        <line class="er-line" x1="627" y1="741" x2="627" y2="755"/>
+        <circle class="er-zero" cx="616" cy="748" r="4.5"/>
+        <path class="er-line" d="M559 436 L546 428 M559 436 L546 444"/>
+        <circle class="er-zero" cx="567" cy="436" r="4.5"/>
+        <text class="er-card" x="598" y="676" text-anchor="start">0..1 : 0..N</text>
+
+        <path class="er-line" d="M137 472 L137 520"/>
+        <line class="er-line" x1="131" y1="481" x2="143" y2="481"/>
+        <line class="er-line" x1="131" y1="487" x2="143" y2="487"/>
+        <path class="er-line" d="M137 507 L129 520 M137 507 L145 520"/>
+        <circle class="er-zero" cx="137" cy="499" r="4.5"/>
+        <text class="er-card" x="151" y="502" text-anchor="start">1 : 0..N</text>
+
+        <path class="er-line" d="M320 1088 L137 1088 L137 812"/>
+        <line class="er-line" x1="311" y1="1082" x2="311" y2="1094"/>
+        <line class="er-line" x1="305" y1="1082" x2="305" y2="1094"/>
+        <path class="er-line" d="M137 825 L129 812 M137 825 L145 812"/>
+        <circle class="er-zero" cx="137" cy="833" r="4.5"/>
+        <text class="er-card" x="228.5" y="1076" text-anchor="middle">1 : 0..N</text>
+
+        <path class="er-line" d="M546 1088 L766 1088 L766 986"/>
+        <line class="er-line" x1="555" y1="1082" x2="555" y2="1094"/>
+        <line class="er-line" x1="561" y1="1082" x2="561" y2="1094"/>
+        <path class="er-line" d="M766 999 L758 986 M766 999 L774 986"/>
+        <circle class="er-zero" cx="766" cy="1007" r="4.5"/>
+        <text class="er-card" x="656.0" y="1076" text-anchor="middle">1 : 0..N</text>
+      </svg>

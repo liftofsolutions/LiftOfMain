@@ -1,0 +1,135 @@
+{
+  "pinecone_index": {
+    "_id": "d6ee36c2-9375-472d-ac66-1885cb3895ac",
+    "name": "kb-1536-cosine-us",
+    "host": "kb-1536-cosine-us-abc123.svc.us-east1-gcp.pinecone.io",
+    "dimension": 1536,
+    "metric": "cosine",
+    "embedding_model": "<embedding model id>",
+    "cloud": "gcp",
+    "region": "us-east1",
+    "created_at": "2026-10-01T00:00:00Z",
+    "updated_at": "2026-10-01T00:00:00Z"
+  },
+  "rags": [
+    {
+      "_id": "5117de8d-0c4d-4601-8948-20aff88762d0",
+      "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+      "pinecone_index_id": "d6ee36c2-9375-472d-ac66-1885cb3895ac",
+      "namespace": "5117de8d-0c4d-4601-8948-20aff88762d0",
+      "name": "India pricing & delivery",
+      "description": "Prices in INR, delivery areas and times in India",
+      "country": "IN",
+      "status": "indexing",
+      "created_by": "8f3c2a1e-5b7d-4c9a-a1f2-3e6b9d0c7a41",
+      "created_at": "2026-10-02T10:00:00Z",
+      "updated_at": "2026-10-05T09:30:00Z"
+    },
+    {
+      "_id": "3700255f-a07c-4820-86eb-ba61fb732f77",
+      "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+      "pinecone_index_id": "d6ee36c2-9375-472d-ac66-1885cb3895ac",
+      "namespace": "3700255f-a07c-4820-86eb-ba61fb732f77",
+      "name": "Acme product catalogue",
+      "description": "Product specs and FAQs for every market",
+      "status": "ready",
+      "created_by": "8f3c2a1e-5b7d-4c9a-a1f2-3e6b9d0c7a41",
+      "created_at": "2026-10-02T10:00:00Z",
+      "updated_at": "2026-10-05T09:30:00Z"
+    }
+  ],
+  "rag_documents": [
+    {
+      "_id": "2248f55c-0d5c-4d88-801f-e9abe25496a6",
+      "rag_id": "3700255f-a07c-4820-86eb-ba61fb732f77",
+      "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+      "title": "X200 product page",
+      "source": "url",
+      "url": "https://acme.example/products/x200",
+      "metadata": {
+        "mime_type": "text/html",
+        "size_bytes": 48211,
+        "checksum_sha256": "3f9a…c21e",
+        "language": "en",
+        "tags": [
+          "x200",
+          "specs"
+        ]
+      },
+      "chunk_count": 18,
+      "status": "ready",
+      "indexed_at": "2026-10-02T10:03:12Z",
+      "created_by": "8f3c2a1e-5b7d-4c9a-a1f2-3e6b9d0c7a41",
+      "created_at": "2026-10-02T10:00:00Z",
+      "updated_at": "2026-10-02T10:03:12Z"
+    },
+    {
+      "_id": "498b036b-125e-45aa-90b8-98a92ed8a1af",
+      "rag_id": "5117de8d-0c4d-4601-8948-20aff88762d0",
+      "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+      "title": "Delivery zones India 2026.pdf",
+      "source": "upload",
+      "file_path": "projects/a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34/rags/5117de8d-0c4d-4601-8948-20aff88762d0/delivery-zones-india-2026.pdf",
+      "metadata": {
+        "mime_type": "application/pdf",
+        "size_bytes": 1830044,
+        "pages": 42,
+        "checksum_sha256": "a71c…09bd",
+        "language": "en"
+      },
+      "chunk_count": 0,
+      "status": "pending",
+      "created_by": "8f3c2a1e-5b7d-4c9a-a1f2-3e6b9d0c7a41",
+      "created_at": "2026-10-05T09:30:00Z",
+      "updated_at": "2026-10-05T09:30:00Z"
+    }
+  ],
+  "rag_jobs": [
+    {
+      "_id": "ec812b8d-20b8-41ab-8803-1dbb188030da",
+      "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+      "rag_id": "3700255f-a07c-4820-86eb-ba61fb732f77",
+      "document_id": "2248f55c-0d5c-4d88-801f-e9abe25496a6",
+      "type": "index",
+      "status": "done",
+      "attempts": 1,
+      "progress": {
+        "chunks_done": 18,
+        "chunks_total": 18
+      },
+      "started_at": "2026-10-02T10:00:05Z",
+      "finished_at": "2026-10-02T10:03:12Z",
+      "expires_at": "2026-10-09T10:03:12Z",
+      "created_at": "2026-10-02T10:00:00Z",
+      "updated_at": "2026-10-02T10:03:12Z"
+    },
+    {
+      "_id": "ab41ead8-6456-47fa-9daf-4b14fa57fb98",
+      "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+      "rag_id": "5117de8d-0c4d-4601-8948-20aff88762d0",
+      "document_id": "498b036b-125e-45aa-90b8-98a92ed8a1af",
+      "type": "index",
+      "status": "running",
+      "attempts": 1,
+      "progress": {
+        "pages_parsed": 30,
+        "pages_total": 42,
+        "chunks_done": 0
+      },
+      "started_at": "2026-10-05T09:30:04Z",
+      "expires_at": "2026-11-04T09:30:00Z",
+      "created_at": "2026-10-05T09:30:00Z",
+      "updated_at": "2026-10-05T09:31:40Z"
+    }
+  ],
+  "pinecone_vector_example": {
+    "id": "2248f55c-0d5c-4d88-801f-e9abe25496a6#0",
+    "namespace": "3700255f-a07c-4820-86eb-ba61fb732f77",
+    "metadata": {
+      "document_id": "2248f55c-0d5c-4d88-801f-e9abe25496a6",
+      "rag_id": "3700255f-a07c-4820-86eb-ba61fb732f77",
+      "chunk": 0,
+      "text": "The X200 has a 12-hour battery…"
+    }
+  }
+}
