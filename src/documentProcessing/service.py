@@ -17,7 +17,11 @@ from datetime import datetime, timedelta, timezone
 from DbAdapters import Document, setOperation
 from documentProcessing import utilities
 from documentProcessing.jobManager import getJobManager
-from documentProcessing.ragJob import RagJob
+from documentProcessing.ragJob import (
+    JOB_STATUS_DONE,
+    JOB_STATUS_FAILED,
+    RagJob,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +36,9 @@ JOB_STATUS_CREATED = "created"
 
 # A job's `expires_at` while it is open, for the TTL that deletes it.
 OPEN_JOB_RETENTION = timedelta(days=1)
+# Runs a job may have, as `db/knowledge-schema` says: one that has failed
+# this many times is not run again.
+MAX_JOB_ATTEMPTS = 3
 
 
 def utcNow() -> datetime:
@@ -135,26 +142,48 @@ async def submitRagJob(
     countryId: str | None,
     metadata: dict,
 ) -> dict:
-    """Hand a created job, with its document's link, to the job manager.
+    """Hand a job, with its document's link, to the job manager.
 
     Only the job is verified - it exists under `projectId` - since creating
-    it checked the account, the project and the membership. The link is
-    checked by the job when it downloads; a link it cannot take fails the
-    job, with the reason as its error. The manager queues the job and runs
-    it when a slot is free; this returns at once. No country means
+    it checked the account, the project and the membership. Then its state:
+    a job its record says is done is answered as completed, one that has
+    failed MAX_JOB_ATTEMPTS times as out of tries, and one the manager
+    holds, waiting or running, as still processing; none is run again. The
+    record is read from Firestore, not the cache, as its status moves. Any
+    other job runs: a new one, one that failed fewer times, or one a
+    restart stopped part way, since the manager holds its jobs in memory
+    only. Each run counts in `attempts`.
+
+    The link is checked by the job when it downloads; a link it cannot take
+    fails the job, with the reason as its error. The manager queues the job
+    and runs it when a slot is free; this returns at once. No country means
     knowledge that applies to every country.
     """
-    ragJob = await utilities.fetchRagJob(jobId)
-    if ragJob is None or ragJob.get("project_id") != projectId:
+    stored = await utilities.getFirestoreAdapter().fetchDocument(
+        utilities.RAG_JOBS, jobId
+    )
+    if stored is None or stored.data.get("project_id") != projectId:
         return errorResult(
             ERROR_NOT_FOUND, f"Project {projectId!r} has no job {jobId!r}."
+        )
+    status = stored.data.get("status")
+    if status == JOB_STATUS_DONE:
+        return errorResult(
+            ERROR_CONFLICT, f"Job {jobId!r} is already completed."
+        )
+    attempts = stored.data.get("attempts", 0)
+    if status == JOB_STATUS_FAILED and attempts >= MAX_JOB_ATTEMPTS:
+        return errorResult(
+            ERROR_CONFLICT,
+            f"Job {jobId!r} has failed {attempts} times, the most it may; "
+            "create a new job.",
         )
 
     job = RagJob(
         jobId=jobId,
         accountUuid=accountUuid,
         projectId=projectId,
-        ragId=ragJob["rag_id"],
+        ragId=stored.data["rag_id"],
         documentLink=documentLink,
         countryId=countryId,
         metadata=metadata,
@@ -162,7 +191,7 @@ async def submitRagJob(
     )
     if not getJobManager().createJob(job):
         return errorResult(
-            ERROR_CONFLICT, f"Job {jobId!r} is already submitted."
+            ERROR_CONFLICT, f"Job {jobId!r} is still processing."
         )
     return {"jobId": jobId, "ragId": job.ragId, "status": job.status}
 

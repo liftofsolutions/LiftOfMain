@@ -647,7 +647,8 @@ def analyzeDocument(path: Path, fileName: str) -> DocumentAnalysis:
 
     Raises:
         AnalysisError: If it is an archive that cannot be opened, or nothing
-            in it could be read.
+            in it could be read: no file in it holds a word, as with a
+            scanned pdf or an empty txt.
     """
     fileFormat = path.suffix.lower()
     document = DocumentAnalysis(
@@ -670,21 +671,25 @@ def analyzeDocument(path: Path, fileName: str) -> DocumentAnalysis:
     else:
         document.files.append(analyzeFile(path, fileName, fileFormat))
 
-    if not any(analysis.readable for analysis in document.files):
+    # An unreadable file's wordCount is None, a file with no text's is 0.
+    if not any(analysis.wordCount for analysis in document.files):
         raise AnalysisError(describeNothingReadable(document))
     return document
 
 
 def describeNothingReadable(document: DocumentAnalysis) -> str:
-    """Why a document gave nothing to read, from its first problem."""
+    """Why a document gave no text to read, from its first problem."""
     message = f"Nothing in {document.fileName!r} could be read."
-    if document.files:
-        return f"{message} {document.files[0].notes[0]}"
+    notes = [note for analysis in document.files for note in analysis.notes]
+    if notes:
+        return f"{message} {notes[0]}"
     if document.skippedFiles:
         first = document.skippedFiles[0]
         moreSkipped = len(document.skippedFiles) - 1
         more = f" {moreSkipped} more were skipped too." if moreSkipped else ""
         return f"{message} Skipped {first.fileName}: {first.reason}{more}"
+    if document.files:
+        return f"{message} It holds no text."
     return f"{message} It is empty."
 
 

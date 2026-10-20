@@ -5,15 +5,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from DbAdapters.memoryDb import getMemoryDb
+from DbAdapters.pineconeDb import getPineconeDb
 from documentProcessing.routes import router as documentProcessingRouter
 from serverDetails.routes import router as serverDetailsRouter
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Build the shared in-memory store before the first request."""
+    """Build the in-memory store first; close the Pinecone queue last."""
     getMemoryDb()
     yield
+    await getPineconeDb().close()
 
 
 app = FastAPI(title="rag", version="0.1.0", lifespan=lifespan)

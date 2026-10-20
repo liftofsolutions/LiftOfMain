@@ -14,10 +14,10 @@ Two entry points, and nothing else is meant to be called from outside:
   one is stopped. Its slot is freed and the next waiting job started at
   once, not when the stopped job has finished winding down.
 
-A job is started by running its `start` in a task, with its `finish` as
-the task's done callback. Scheduling is driven by the jobs themselves:
-each is given `onJobFinished` as its `onFinished`, and calls it once it is
-over with the status it ended in and, if it failed, the error. That writes
+A job is started by running its `start` in a task. Scheduling is driven
+by the jobs themselves: each is given `onJobFinished` as its `onFinished`,
+and calls it once it ends, done or failed, with that status and, if it
+failed, the error. That writes
 both onto the job, frees its slot and starts the next waiting job. A job
 that is interrupted is called back for by `interruptAndDelete` instead,
 and its own call back is taken away, so `onJobFinished` still runs once
@@ -128,7 +128,6 @@ class JobManager:
                 continue
             self.runningJobs[job.jobId] = job
             job.task = asyncio.create_task(job.start())
-            job.task.add_done_callback(job.finish)
 
 
 _JOB_MANAGER: JobManager | None = None
