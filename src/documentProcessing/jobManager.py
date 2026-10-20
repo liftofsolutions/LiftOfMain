@@ -3,13 +3,15 @@
     from documentProcessing.jobManager import getJobManager
 
     created = getJobManager().createJob(job)
+    busy = getJobManager().isHeld(jobId)
     deleted = getJobManager().interruptAndDelete(jobId)
 
-Two entry points, and nothing else is meant to be called from outside:
+Three entry points, and nothing else is meant to be called from outside:
 
 * `createJob` puts a job on the pending queue, then starts waiting jobs
   while fewer than `maxRunning` are running. When none can run, it just
   returns; the job waits.
+* `isHeld` says whether a job is waiting or running here.
 * `interruptAndDelete` forgets a job: a waiting one never runs, a running
   one is stopped. Its slot is freed and the next waiting job started at
   once, not when the stopped job has finished winding down.
@@ -72,6 +74,10 @@ class JobManager:
         LOGGER.info("Queued job: %s", job)
         self.startPendingJobs()
         return True
+
+    def isHeld(self, jobId: str) -> bool:
+        """Whether the job with `jobId` is waiting or running here."""
+        return jobId in self.heldJobs
 
     def interruptAndDelete(self, jobId: str) -> bool:
         """Stop the job, forget it, and start the next waiting job.

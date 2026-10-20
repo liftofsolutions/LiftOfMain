@@ -1,8 +1,8 @@
 """Rag jobs: create one, submit a document to it, follow it, delete it.
 
-Creating a job, submitting one and reading its status are written; deleting
-is still to be designed, so those calls report that they are not
-implemented yet. Records
+Creating a job, submitting one, reading its status and deleting a rag are
+written; deleting a job is still to be designed, so that call reports it
+is not implemented yet. Records
 follow `db/knowledge-schema` and are read and written through `utilities`.
 A submitted job is run by the `JobManager`.
 
@@ -11,12 +11,15 @@ logged, with `errorKind` one of the `ERROR_*` constants for the route to
 turn into a status code.
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from DbAdapters import Document, setOperation
-from documentProcessing import utilities
+from DbAdapters import Document, deleteOperation, setOperation
+from DbAdapters.pineconeDb import getPineconeDb
+from DbAdapters.pineconeDb.pineconeDb import IDS_PER_REQUEST
+from documentProcessing import ragStrategy, utilities
 from documentProcessing.jobManager import getJobManager
 from documentProcessing.ragJob import (
     JOB_STATUS_DONE,
@@ -30,8 +33,12 @@ ERROR_NOT_FOUND = "notFound"
 ERROR_FORBIDDEN = "forbidden"
 ERROR_CONFLICT = "conflict"
 ERROR_NOT_IMPLEMENTED = "notImplemented"
+# Pinecone did not finish its part; doing it again picks up what is left.
+ERROR_INCOMPLETE = "incomplete"
 
 RAG_STATUS_INDEXING = "indexing"
+# Being deleted: searches use ready rags only, so it is out of them.
+RAG_STATUS_DELETING = "deleting"
 JOB_TYPE_INDEX = "index"
 JOB_STATUS_CREATED = "created"
 
@@ -101,13 +108,16 @@ async def checkAccess(accountUuid: str, projectId: str) -> dict | None:
     return None
 
 
-async def fetchProjectJob(projectId: str, jobId: str) -> dict | None:
-    """The job's record, if it is a job of `projectId`.
+async def fetchProjectRecord(
+    collection: str, projectId: str, recordId: str
+) -> dict | None:
+    """The record under `recordId`, if it belongs to `projectId`.
 
-    Read from Firestore itself, not the cache, as its status moves.
+    Read from Firestore itself, not the cache, as a job's or a rag's
+    status moves.
     """
     stored = await utilities.getFirestoreAdapter().fetchDocument(
-        utilities.RAG_JOBS, jobId
+        collection, recordId
     )
     if stored is None or stored.data.get("project_id") != projectId:
         return None
@@ -170,7 +180,9 @@ async def submitRagJob(
     """Hand a job, with its document's link, to the job manager.
 
     Only the job is verified - it exists under `projectId` - since creating
-    it checked the account, the project and the membership. Then its state:
+    it checked the account, the project and the membership. Its rag must
+    still be there and not being deleted, or the job would write into a
+    rag on its way out. Then the job's state:
     a job its record says is done is answered as completed, one that has
     failed MAX_JOB_ATTEMPTS times as out of tries, and one the manager
     holds, waiting or running, as still processing; none is run again. Any
@@ -183,10 +195,23 @@ async def submitRagJob(
     and runs it when a slot is free; this returns at once. No country means
     knowledge that applies to every country.
     """
-    ragJob = await fetchProjectJob(projectId, jobId)
+    ragJob = await fetchProjectRecord(
+        utilities.RAG_JOBS, projectId, jobId
+    )
     if ragJob is None:
         return errorResult(
             ERROR_NOT_FOUND, f"Project {projectId!r} has no job {jobId!r}."
+        )
+    ragId = ragJob["rag_id"]
+    rag = await fetchProjectRecord(utilities.RAGS, projectId, ragId)
+    if rag is None:
+        return errorResult(
+            ERROR_NOT_FOUND, f"The rag {ragId!r} of job {jobId!r} is gone."
+        )
+    if rag.get("status") == RAG_STATUS_DELETING:
+        return errorResult(
+            ERROR_CONFLICT,
+            f"Rag {ragId!r} is being deleted; job {jobId!r} cannot run.",
         )
     status = ragJob.get("status")
     if status == JOB_STATUS_DONE:
@@ -205,7 +230,7 @@ async def submitRagJob(
         jobId=jobId,
         accountUuid=accountUuid,
         projectId=projectId,
-        ragId=ragJob["rag_id"],
+        ragId=ragId,
         documentLink=documentLink,
         countryId=countryId,
         metadata=metadata,
@@ -229,7 +254,9 @@ async def getRagJobStatus(
     denied = await checkAccess(accountUuid, projectId)
     if denied is not None:
         return denied
-    ragJob = await fetchProjectJob(projectId, jobId)
+    ragJob = await fetchProjectRecord(
+        utilities.RAG_JOBS, projectId, jobId
+    )
     if ragJob is None:
         return errorResult(
             ERROR_NOT_FOUND, f"Project {projectId!r} has no job {jobId!r}."
@@ -246,6 +273,110 @@ async def deleteRagJob(accountUuid: str, projectId: str, jobId: str) -> dict:
     return notImplemented("Deleting a rag job")
 
 
+def heldJobIdOf(jobs: list[Document]) -> str | None:
+    """The first of `jobs` the manager holds, waiting or running, if any."""
+    return next(
+        (job.id for job in jobs if getJobManager().isHeld(job.id)), None
+    )
+
+
+async def deleteChunkBatch(ragId: str, chunkIds: list[str]) -> bool:
+    """Delete one batch of a rag's chunks in Pinecone; whether it worked."""
+    try:
+        await getPineconeDb().delete(ragId, chunkIds)
+    except Exception:
+        LOGGER.exception(
+            "Deleting %s chunks of rag %s failed.", len(chunkIds), ragId
+        )
+        return False
+    return True
+
+
 async def deleteRag(accountUuid: str, projectId: str, ragId: str) -> dict:
-    """Delete the rag itself."""
-    return notImplemented("Deleting a rag")
+    """Delete a rag: its chunks in Pinecone, then its records in Firestore.
+
+    For a member of its project, as `checkAccess` checks. A rag whose job
+    the manager still holds, waiting or running, is refused. Otherwise:
+
+    1. The rag is marked `deleting`, so searches stop using it and its
+       jobs can no longer be submitted; the jobs are checked once more,
+       for a submit that read the rag just before.
+    2. Its chunk ids are gathered: every id its namespace lists, and those
+       its `chunk_count` gives, as a listing can lag a save just made.
+    3. They are deleted in batches of IDS_PER_REQUEST, each its own task,
+       all at once, and every task's outcome is awaited.
+    4. Only if all succeed are the rag's record and its jobs' records
+       deleted, in one batch. If any fails, the rag stays `deleting`, and
+       deleting it again picks up what is left.
+    """
+    denied = await checkAccess(accountUuid, projectId)
+    if denied is not None:
+        return denied
+    rag = await fetchProjectRecord(utilities.RAGS, projectId, ragId)
+    if rag is None:
+        return errorResult(
+            ERROR_NOT_FOUND, f"Project {projectId!r} has no rag {ragId!r}."
+        )
+    jobs = await utilities.getFirestoreAdapter().findDocuments(
+        utilities.RAG_JOBS, equals={"rag_id": ragId}
+    )
+    heldJobId = heldJobIdOf(jobs)
+    if heldJobId is None:
+        await ragStrategy.saveRag(ragId, {"status": RAG_STATUS_DELETING})
+        # A submit that read the rag just before it was disabled may have
+        # queued its job meanwhile. That job's end writes the rag's status
+        # back, so the rag is left to it.
+        heldJobId = heldJobIdOf(jobs)
+    if heldJobId is not None:
+        return errorResult(
+            ERROR_CONFLICT,
+            f"Rag {ragId!r} has job {heldJobId!r} still processing; "
+            "delete the rag once the job has finished.",
+        )
+
+    try:
+        listedIds = await getPineconeDb().listIds(ragId)
+    except Exception:
+        LOGGER.exception("Listing the chunks of rag %s failed.", ragId)
+        return errorResult(
+            ERROR_INCOMPLETE,
+            f"The chunks of rag {ragId!r} could not be listed. It stays "
+            "disabled; delete it again to finish.",
+        )
+    countedIds = {
+        ragStrategy.recordIdOf(ragId, chunkIndex)
+        for chunkIndex in range(rag.get("chunk_count", 0))
+    }
+    chunkIds = sorted(set(listedIds) | countedIds)
+    batches = [
+        chunkIds[start : start + IDS_PER_REQUEST]
+        for start in range(0, len(chunkIds), IDS_PER_REQUEST)
+    ]
+    outcomes = await asyncio.gather(
+        *(deleteChunkBatch(ragId, batch) for batch in batches)
+    )
+    failedCount = sum(
+        len(batch)
+        for batch, deleted in zip(batches, outcomes, strict=True)
+        if not deleted
+    )
+    if failedCount:
+        return errorResult(
+            ERROR_INCOMPLETE,
+            f"{failedCount} of {len(chunkIds)} chunks of rag {ragId!r} "
+            "could not be deleted. It stays disabled; delete it again to "
+            "finish.",
+        )
+
+    jobIds = [job.id for job in jobs]
+    await utilities.getFirestoreAdapter().applyAtomically(
+        [deleteOperation(utilities.RAGS, ragId)]
+        + [deleteOperation(utilities.RAG_JOBS, jobId) for jobId in jobIds]
+    )
+    LOGGER.info(
+        "Deleted rag %s: %s chunks, and jobs %s.",
+        ragId,
+        len(chunkIds),
+        jobIds,
+    )
+    return {"ragId": ragId}

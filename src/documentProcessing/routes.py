@@ -37,6 +37,8 @@ ERROR_STATUS_CODES = {
     service.ERROR_FORBIDDEN: 403,
     service.ERROR_CONFLICT: 409,
     service.ERROR_NOT_IMPLEMENTED: 501,
+    # A store this service relies on, Pinecone, did not finish its part.
+    service.ERROR_INCOMPLETE: 502,
 }
 
 
