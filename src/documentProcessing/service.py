@@ -1,7 +1,8 @@
 """Rag jobs: create one, submit a document to it, follow it, delete it.
 
-Creating a job and submitting one are written; the rest is still to be
-designed, so those calls report that they are not implemented yet. Records
+Creating a job, submitting one and reading its status are written; deleting
+is still to be designed, so those calls report that they are not
+implemented yet. Records
 follow `db/knowledge-schema` and are read and written through `utilities`.
 A submitted job is run by the `JobManager`.
 
@@ -75,14 +76,11 @@ def notImplemented(operation: str) -> dict:
     )
 
 
-async def createRagJob(accountUuid: str, projectId: str) -> dict:
-    """Open a rag and a job for it under `accountUuid`'s `projectId`.
+async def checkAccess(accountUuid: str, projectId: str) -> dict | None:
+    """The error for an account that may not use `projectId`, else None.
 
-    Database reads and writes only, in this order: the account must exist,
-    the project must be valid, and the account must be a member of it.
-    Then a rag id and a job id are drawn, each checked against what is
-    already stored, and both records are written in one batch, so neither
-    exists without the other.
+    In this order: the account must exist, the project must be valid, and
+    the account must be a member of it.
     """
     if not await utilities.isAccountIdValid(accountUuid):
         return errorResult(
@@ -100,6 +98,33 @@ async def createRagJob(accountUuid: str, projectId: str) -> dict:
             f"Account {accountUuid!r} is not a member of project "
             f"{projectId!r}.",
         )
+    return None
+
+
+async def fetchProjectJob(projectId: str, jobId: str) -> dict | None:
+    """The job's record, if it is a job of `projectId`.
+
+    Read from Firestore itself, not the cache, as its status moves.
+    """
+    stored = await utilities.getFirestoreAdapter().fetchDocument(
+        utilities.RAG_JOBS, jobId
+    )
+    if stored is None or stored.data.get("project_id") != projectId:
+        return None
+    return stored.data
+
+
+async def createRagJob(accountUuid: str, projectId: str) -> dict:
+    """Open a rag and a job for it under `accountUuid`'s `projectId`.
+
+    Database reads and writes only: once `checkAccess` lets the account in,
+    a rag id and a job id are drawn, each checked against what is already
+    stored, and both records are written in one batch, so neither exists
+    without the other.
+    """
+    denied = await checkAccess(accountUuid, projectId)
+    if denied is not None:
+        return denied
 
     ragId = await generateUniqueId(utilities.RAGS)
     jobId = await generateUniqueId(utilities.RAG_JOBS)
@@ -148,8 +173,7 @@ async def submitRagJob(
     it checked the account, the project and the membership. Then its state:
     a job its record says is done is answered as completed, one that has
     failed MAX_JOB_ATTEMPTS times as out of tries, and one the manager
-    holds, waiting or running, as still processing; none is run again. The
-    record is read from Firestore, not the cache, as its status moves. Any
+    holds, waiting or running, as still processing; none is run again. Any
     other job runs: a new one, one that failed fewer times, or one a
     restart stopped part way, since the manager holds its jobs in memory
     only. Each run counts in `attempts`.
@@ -159,19 +183,17 @@ async def submitRagJob(
     and runs it when a slot is free; this returns at once. No country means
     knowledge that applies to every country.
     """
-    stored = await utilities.getFirestoreAdapter().fetchDocument(
-        utilities.RAG_JOBS, jobId
-    )
-    if stored is None or stored.data.get("project_id") != projectId:
+    ragJob = await fetchProjectJob(projectId, jobId)
+    if ragJob is None:
         return errorResult(
             ERROR_NOT_FOUND, f"Project {projectId!r} has no job {jobId!r}."
         )
-    status = stored.data.get("status")
+    status = ragJob.get("status")
     if status == JOB_STATUS_DONE:
         return errorResult(
             ERROR_CONFLICT, f"Job {jobId!r} is already completed."
         )
-    attempts = stored.data.get("attempts", 0)
+    attempts = ragJob.get("attempts", 0)
     if status == JOB_STATUS_FAILED and attempts >= MAX_JOB_ATTEMPTS:
         return errorResult(
             ERROR_CONFLICT,
@@ -183,7 +205,7 @@ async def submitRagJob(
         jobId=jobId,
         accountUuid=accountUuid,
         projectId=projectId,
-        ragId=stored.data["rag_id"],
+        ragId=ragJob["rag_id"],
         documentLink=documentLink,
         countryId=countryId,
         metadata=metadata,
@@ -199,8 +221,24 @@ async def submitRagJob(
 async def getRagJobStatus(
     accountUuid: str, projectId: str, jobId: str
 ) -> dict:
-    """Where the job has got to."""
-    return notImplemented("Reading a rag job's status")
+    """Where the job has got to, for a member of its project.
+
+    `checkAccess` lets the account in first. A job of another project is
+    answered as missing, the same as one that does not exist.
+    """
+    denied = await checkAccess(accountUuid, projectId)
+    if denied is not None:
+        return denied
+    ragJob = await fetchProjectJob(projectId, jobId)
+    if ragJob is None:
+        return errorResult(
+            ERROR_NOT_FOUND, f"Project {projectId!r} has no job {jobId!r}."
+        )
+    return {
+        "jobId": jobId,
+        "ragId": ragJob["rag_id"],
+        "status": ragJob["status"],
+    }
 
 
 async def deleteRagJob(accountUuid: str, projectId: str, jobId: str) -> dict:
