@@ -48,6 +48,7 @@ import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from operator import itemgetter
 from pathlib import Path, PurePosixPath
 from typing import IO
 
@@ -56,6 +57,8 @@ import pdfplumber
 import rarfile
 import tiktoken
 from docx.opc.constants import RELATIONSHIP_TYPE
+from pdfplumber.page import Page
+from pdfplumber.utils import cluster_objects
 
 from config import getServerConfig
 from documentProcessing import downloader
@@ -86,6 +89,11 @@ CHARACTERS_PER_TOKEN = 4
 
 WINDOWS_BSDTAR_TOOL = "tar"
 HEADING_STYLE_PREFIX = "Heading"
+# How far apart, in points, two copies of a pdf character may be drawn and
+# still be one character. pdfplumber's own default.
+DOUBLED_CHAR_TOLERANCE = 1
+SAME_CHAR = itemgetter("upright", "text")
+CHAR_POSITION = itemgetter("doctop", "x0")
 
 MARKDOWN_HEADING = re.compile(r"^#{1,6}\s")
 # The `|---|---|` row under a table's header; one per table.
@@ -314,6 +322,39 @@ def readPlainText(analysis: FileAnalysis) -> None:
                     inCodeBlock = countMarkdownLine(analysis, line, inCodeBlock)
 
 
+def keptCharIdsOf(page: Page) -> set[int]:
+    """The ids of `page`'s characters, each drawn once.
+
+    Some pdfs fake bold by drawing a character twice, a little apart and in
+    another font, so it would read "NNaattiioonnaall". Copies with the same
+    text within DOUBLED_CHAR_TOLERANCE points down and across are one
+    character, whatever their font; the first is kept. This is
+    pdfplumber's `dedupe_chars(extra_attrs=())`, less its final step, which
+    restores the order with `list.index`: quadratic, seconds on a full page.
+    """
+    keptIds = set()
+    chars = sorted(page.chars, key=SAME_CHAR)
+    for _, copies in itertools.groupby(chars, key=SAME_CHAR):
+        for row in cluster_objects(
+            list(copies), itemgetter("doctop"), DOUBLED_CHAR_TOLERANCE
+        ):
+            for spot in cluster_objects(
+                row, itemgetter("x0"), DOUBLED_CHAR_TOLERANCE
+            ):
+                keptIds.add(id(min(spot, key=CHAR_POSITION)))
+    return keptIds
+
+
+def pageTextOf(page: Page) -> str:
+    """A pdf page's text, each character once, in the page's order."""
+    keptIds = keptCharIdsOf(page)
+    onePage = page.filter(
+        lambda pageObject: pageObject["object_type"] != "char"
+        or id(pageObject) in keptIds
+    )
+    return onePage.extract_text() or ""
+
+
 def readPdf(analysis: FileAnalysis) -> None:
     """Count a pdf a page at a time: its text, pages, tables and images.
 
@@ -326,7 +367,7 @@ def readPdf(analysis: FileAnalysis) -> None:
     with pdfplumber.open(analysis.path) as pdf:
         analysis.pageCount = len(pdf.pages)
         for page in pdf.pages:
-            addText(analysis, page.extract_text() or "")
+            addText(analysis, pageTextOf(page))
             analysis.tableCount += len(page.find_tables())
             analysis.imageCount += len(page.images)
             page.close()
@@ -386,7 +427,7 @@ def pdfTextOf(path: Path) -> str:
     pages = []
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
-            pages.append(page.extract_text() or "")
+            pages.append(pageTextOf(page))
             page.close()
     return "\n\n".join(pages)
 
