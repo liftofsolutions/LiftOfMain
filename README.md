@@ -115,6 +115,14 @@ uv run pytest Ptest -q   # product tests: through the routes
 uv run pytest -q         # both
 ```
 
+The Ptest starts the server itself, indexes `Ptest/docs/docs.rar` and asks
+every question in `Ptest/docs/question.json`; `gpt-6-luna` scores each
+question's chunks from 0 to 10. It uses the real Firestore, Pinecone and
+OpenAI in `test.env`, and costs a few cents a run. Add `-s` to see the
+scores; the full report and the server's log land in `Ptest/results/`.
+`Ptest/documentProcessing/dummyData.py` makes and removes its dummy account
+and project, and can be run on its own.
+
 ## More
 
 - [docs/](docs/README.md): architecture, database adapters, LLM, testing

@@ -1,0 +1,743 @@
+{
+  "archive": "docs.rar",
+  "documents": [
+    {
+      "id": "company",
+      "file": "company.txt",
+      "title": "Aether Dynamics corporate dossier",
+      "categories": [
+        {
+          "id": "company.1",
+          "name": "Direct Retrieval & Historical Facts",
+          "questions": [
+            {
+              "id": "company.1.1",
+              "question": "When and where was Aether Dynamics founded, who are the two co-founders, and what was their original incubator project name?"
+            },
+            {
+              "id": "company.1.2",
+              "question": "What were the funding amounts and lead investors for the Series A, Series B, and Series C financing rounds, and what was the post-money valuation after Series C?"
+            },
+            {
+              "id": "company.1.3",
+              "question": "What are the physical addresses and operational responsibilities of the Seattle, Amsterdam, Hsinchu, and Bengaluru campuses?"
+            },
+            {
+              "id": "company.1.4",
+              "question": "Who serves as the Worker-Elected Director on the Board, what is her primary engineering title, and what is her mandate?"
+            },
+            {
+              "id": "company.1.5",
+              "question": "How many calendar days of mandatory minimum paid time off (PTO) are employees allocated per year, and what happens automatically if an employee has used fewer than 20 days by Q4?"
+            }
+          ]
+        },
+        {
+          "id": "company.2",
+          "name": "Multi-Hop, Compensation & Equity Math",
+          "questions": [
+            {
+              "id": "company.2.1",
+              "question": "How does the equity vesting schedule differ between Year 1 and the subsequent 36 months, and how long do departing employees have to exercise their vested stock options?"
+            },
+            {
+              "id": "company.2.2",
+              "question": "What is the total target compensation band (base plus equity) for an IC4 Staff Engineer compared to an IC2 Mid-Level Engineer at the Seattle hub?"
+            },
+            {
+              "id": "company.2.3",
+              "question": "Why were individual discretionary bonuses abolished, and how is annual profit-sharing distributed instead?"
+            },
+            {
+              "id": "company.2.4",
+              "question": "What purchasing power parity or tier modifier is applied to compensation for employees based in Hsinchu versus Amsterdam?"
+            }
+          ]
+        },
+        {
+          "id": "company.3",
+          "name": "Culture, Workplace Boundaries & Hiring Rules",
+          "questions": [
+            {
+              "id": "company.3.1",
+              "question": "What specific physical access restriction is enforced on engineering laboratory badges during weeknights and weekends, and what exception override is required to bypass it?"
+            },
+            {
+              "id": "company.3.2",
+              "question": "What are the four stages of the engineering interview process, and how is a candidate compensated for participating in the Stage 3 practical simulation?"
+            },
+            {
+              "id": "company.3.3",
+              "question": "Within how many business days following their final interview must a candidate receive a hiring decision or feedback under the Candidate Bill of Rights?"
+            },
+            {
+              "id": "company.3.4",
+              "question": "What is the \"Doc-First\" decision rule regarding presentations in technical meetings, and how is the beginning of each review meeting structured?"
+            }
+          ]
+        },
+        {
+          "id": "company.4",
+          "name": "Supply Chain, Circular Economy & Governance Constraints",
+          "questions": [
+            {
+              "id": "company.4.1",
+              "question": "What are the three core milestones outlined under the Strategic 2030 Manifesto (Project Singularity)?"
+            },
+            {
+              "id": "company.4.2",
+              "question": "What is the operational function of \"Hermes-1\" at the Bengaluru hub, and what gross material reclamation percentage does it achieve?"
+            },
+            {
+              "id": "company.4.3",
+              "question": "What trade-in voucher range does a customer receive when returning any smartphone (regardless of brand) under Project Re-Genesis?"
+            },
+            {
+              "id": "company.4.4",
+              "question": "How does the company protect whistleblowers from retaliation, and what technical channel is used to ensure anonymity?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "customerService",
+      "file": "customerService.txt",
+      "title": "Customer service SOP and scenario playbook",
+      "categories": [
+        {
+          "id": "customerService.1",
+          "name": "Direct Retrieval & Operational Benchmarks",
+          "questions": [
+            {
+              "id": "customerService.1.1",
+              "question": "What are the SLA benchmark response times for inbound live chat, web/email ticket turnaround, and voice call queues?"
+            },
+            {
+              "id": "customerService.1.2",
+              "question": "What are the financial remediation limits and voucher authority thresholds granted to a Tier 1 Frontline Specialist versus a Tier 2 Diagnostics Engineer?"
+            },
+            {
+              "id": "customerService.1.3",
+              "question": "How long can encrypted customer diagnostic dumps or telemetry traces (.aetherdiag) be retained on support ticketing servers before mandatory cryptographic deletion?"
+            },
+            {
+              "id": "customerService.1.4",
+              "question": "What are the target metrics for Customer Satisfaction (CSAT), First Contact Resolution (FCR), and Customer Effort Score (CES)?"
+            }
+          ]
+        },
+        {
+          "id": "customerService.2",
+          "name": "Multi-Hop & Scenario-Based Edge Cases",
+          "questions": [
+            {
+              "id": "customerService.2.1",
+              "question": "If a customer reports their battery is bulging, splitting the back cover, and emitting a sweet chemical odor, what are the exact verbal safety steps the agent must deliver before creating a ticket?"
+            },
+            {
+              "id": "customerService.2.2",
+              "question": "Under what specific conditions does a customer's device qualify as a \"Defective Production Unit\" under the Lemon Mitigation Standard, and what two executive resolutions must be offered?"
+            },
+            {
+              "id": "customerService.2.3",
+              "question": "How does the handling and resolution differ between a customer who peeled the internal screen film off their Horizon Fold versus a customer whose Pulse 12 Pro tripped the internal Liquid Contact Indicator (LCI) strip after falling into a pool?"
+            },
+            {
+              "id": "customerService.2.4",
+              "question": "If a customer in Germany complains about the absence of a wall charger in their Pulse 12 Pro box, what regulatory explanation must the agent provide, and what two compensatory solutions are offered?"
+            },
+            {
+              "id": "customerService.2.5",
+              "question": "What happens if an RMA device arrives at the Bengaluru repair facility with Google Factory Reset Protection (FRP) or a lock screen pattern active, and what is the timeout rule if the customer does not respond?"
+            }
+          ]
+        },
+        {
+          "id": "customerService.3",
+          "name": "Policy, Logistics & Disputed Liability Constraints",
+          "questions": [
+            {
+              "id": "customerService.3.1",
+              "question": "What are the two choices offered to a customer who receives a flagship phone with a verified 2mm manufacturing tool mark or cosmetic anodization defect on delivery?"
+            },
+            {
+              "id": "customerService.3.2",
+              "question": "Under the open-source bootloader unlocking policy, how does the service center treat a phone that is hard-bricked due to a failed custom ROM flash versus a manufacturing logic board failure, and what is the restoration fee?"
+            },
+            {
+              "id": "customerService.3.3",
+              "question": "Who assumes shipping loss and insurance risk when a customer uses an official prepaid return label to mail in their phone for service?"
+            },
+            {
+              "id": "customerService.3.4",
+              "question": "How does Aether handle an in-transit stolen delivery if the courier's GPS telemetry matches the customer's doorstep compared to when the GPS telemetry shows a discrepancy greater than 50 meters?"
+            },
+            {
+              "id": "customerService.3.5",
+              "question": "What are the pricing and fulfillment differences between having an authorized service center repair a shattered Flow 12 display versus ordering the official self-repair kit?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "generalPolicy",
+      "file": "generalPolicy.txt",
+      "title": "General policy, terms of service and privacy",
+      "categories": [
+        {
+          "id": "generalPolicy.1",
+          "name": "Consumer Returns, Cancellations & Financial Terms",
+          "questions": [
+            {
+              "id": "generalPolicy.1.1",
+              "question": "What is the duration of the \"no-questions-asked\" return window for hardware purchased directly from the official Aether Store, and from what exact event does the timer start?"
+            },
+            {
+              "id": "generalPolicy.1.2",
+              "question": "In which global regions does Aether Dynamics charge zero restocking fees on consumer returns?"
+            },
+            {
+              "id": "generalPolicy.1.3",
+              "question": "What happens if a returned device arrives at the intake depot with an active PIN, pattern lock, or bound Google/Aether account?"
+            },
+            {
+              "id": "generalPolicy.1.4",
+              "question": "How is the refund calculated if a customer returns a smartphone within the 14-day window in pristine condition, but fails to include the bundled wall adapter or charging cable?"
+            },
+            {
+              "id": "generalPolicy.1.5",
+              "question": "Within how many business days of physical receipt and inspection sign-off must Aether initiate a refund to the customer's original payment method?"
+            }
+          ]
+        },
+        {
+          "id": "generalPolicy.2",
+          "name": "Software EULA, Open Source & Bootloader Policy",
+          "questions": [
+            {
+              "id": "generalPolicy.2.1",
+              "question": "Does unlocking the bootloader or gaining root access automatically void a user's limited hardware warranty on unrelated components such as the camera, speakers, or display?"
+            },
+            {
+              "id": "generalPolicy.2.2",
+              "question": "Under what explicit circumstance does hardware failure following firmware modification become excluded from free warranty coverage?"
+            },
+            {
+              "id": "generalPolicy.2.3",
+              "question": "Which parts of the AetherOS software stack are licensed under open-source licenses (GPLv2, Apache 2.0) on GitHub, and within what mandatory timeframe following commercial availability must they be published?"
+            },
+            {
+              "id": "generalPolicy.2.4",
+              "question": "Which specific software layers and models remain proprietary intellectual property and are excluded from public open-source releases?"
+            }
+          ]
+        },
+        {
+          "id": "generalPolicy.3",
+          "name": "Software Lifecycle Roadmaps & End-of-Life Governance",
+          "questions": [
+            {
+              "id": "generalPolicy.3.1",
+              "question": "What are the major Android OS version upgrade and security patch commitments for the Aether Pulse 12 Pro compared to the Aether Flow 12 and Aether Terra 12?"
+            },
+            {
+              "id": "generalPolicy.3.2",
+              "question": "What does Aether Dynamics release when a device officially reaches its End-of-Life (EOL) date to allow independent communities (such as postmarketOS or LineageOS) to maintain custom firmware?"
+            }
+          ]
+        },
+        {
+          "id": "generalPolicy.4",
+          "name": "Privacy Architecture, Edge Compute & Data Retention",
+          "questions": [
+            {
+              "id": "generalPolicy.4.1",
+              "question": "Where do computationally intensive machine learning tasks (such as speech-to-text dictation, photo semantic segmentation, and text summarization) execute, and are voice or photo assets ever sent to cloud servers?"
+            },
+            {
+              "id": "generalPolicy.4.2",
+              "question": "Can Aether Dynamics unlock a password-protected device or recover user files if presented with a valid legal subpoena or court order? Explain the cryptographic architecture that determines this."
+            },
+            {
+              "id": "generalPolicy.4.3",
+              "question": "If a user explicitly opts into anonymous diagnostic telemetry, what specific data types are transmitted, how are IP addresses handled, and after how many days are analytical crash traces permanently purged?"
+            }
+          ]
+        },
+        {
+          "id": "generalPolicy.5",
+          "name": "Right-to-Repair & Hardware Part Serialization",
+          "questions": [
+            {
+              "id": "generalPolicy.5.1",
+              "question": "For how many years following the official end-of-sale date does Aether guarantee the availability of official OEM spare parts on the Self-Repair Portal?"
+            },
+            {
+              "id": "generalPolicy.5.2",
+              "question": "What is Aether’s policy on software part-pairing and serialization locks when a customer or independent technician installs a genuine replacement battery, display, or camera module?"
+            }
+          ]
+        },
+        {
+          "id": "generalPolicy.6",
+          "name": "Legal Dispute Resolution & Arbitration Opt-Out",
+          "questions": [
+            {
+              "id": "generalPolicy.6.1",
+              "question": "What initial informal dispute resolution step must a customer complete before initiating formal legal proceedings, and what is the review window granted to the Executive Escalation Officer?"
+            },
+            {
+              "id": "generalPolicy.6.2",
+              "question": "How can a North American customer exercise their right to opt out of the binding individual arbitration agreement and class action waiver, what information must the notice contain, and what is the strict deadline?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "product1",
+      "file": "product1.txt",
+      "title": "Aether Pulse 12 Pro",
+      "categories": [
+        {
+          "id": "product1.1",
+          "name": "Direct Fact & Spec Retrieval",
+          "questions": [
+            {
+              "id": "product1.1.1",
+              "question": "What is the peak HDR screen brightness of the Aether Pulse 12 Pro, and under what test window size is it measured?"
+            },
+            {
+              "id": "product1.1.2",
+              "question": "What are the three official retail color names available for the device?"
+            },
+            {
+              "id": "product1.1.3",
+              "question": "Which specific primary camera sensor is used, and what is its aperture and focal length equivalent?"
+            },
+            {
+              "id": "product1.1.4",
+              "question": "How many total NPU cores does the NeuralCore N2 have, and what is its rated TOPS performance?"
+            },
+            {
+              "id": "product1.1.5",
+              "question": "Does the phone support analog 3.5mm wired headphones?"
+            }
+          ]
+        },
+        {
+          "id": "product1.2",
+          "name": "Multi-Hop & Relational Extraction",
+          "questions": [
+            {
+              "id": "product1.2.1",
+              "question": "Which storage tier is available only in specific color variants, and which colors are eligible?"
+            },
+            {
+              "id": "product1.2.2",
+              "question": "If a customer buys the phone in Germany versus India, how do the included box accessories differ?"
+            },
+            {
+              "id": "product1.2.3",
+              "question": "How does the touch sampling rate differ between normal daily operation and mobile gaming?"
+            },
+            {
+              "id": "product1.2.4",
+              "question": "What happens to the display's PWM dimming frequency when screen brightness drops below 20%?"
+            }
+          ]
+        },
+        {
+          "id": "product1.3",
+          "name": "Edge-Case, Policy & Negative Constraints",
+          "questions": [
+            {
+              "id": "product1.3.1",
+              "question": "If a user drops the phone into a chlorinated swimming pool at a depth of 1 meter for 10 minutes, is the resulting water damage covered under the standard warranty? Why or why not?"
+            },
+            {
+              "id": "product1.3.2",
+              "question": "Can the user expand their storage using a 512GB microSDXC card if they purchase the 256GB base model?"
+            },
+            {
+              "id": "product1.3.3",
+              "question": "Under what specific battery percentage and schedule does the smart charging overnight protection stop and resume trickle charging?"
+            }
+          ]
+        },
+        {
+          "id": "product1.4",
+          "name": "Technical / Numerical Comparison",
+          "questions": [
+            {
+              "id": "product1.4.1",
+              "question": "What is the difference in wired charging protocol support between the proprietary HyperCharge rate and universal USB Power Delivery (USB-PD PPS)?"
+            },
+            {
+              "id": "product1.4.2",
+              "question": "How many charge-discharge cycles is the battery rated for before dropping below 80% original usable capacity?"
+            },
+            {
+              "id": "product1.4.3",
+              "question": "What is the optical zoom multiplier and 35mm-equivalent focal length of the periscope telephoto lens?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "product2",
+      "file": "product2.txt",
+      "title": "Aether Flow 12",
+      "categories": [
+        {
+          "id": "product2.1",
+          "name": "Direct Retrieval & Hardware Specs",
+          "questions": [
+            {
+              "id": "product2.1.1",
+              "question": "What processor powers the Aether Flow 12, and what are the specific core counts and clock speeds for its performance and efficiency clusters?"
+            },
+            {
+              "id": "product2.1.2",
+              "question": "What is the surface glass protection used on the front display of the Flow 12?"
+            },
+            {
+              "id": "product2.1.3",
+              "question": "What are the three official retail color names available for this model?"
+            },
+            {
+              "id": "product2.1.4",
+              "question": "Where is the biometric fingerprint sensor physically located on the device, and what type of sensor technology does it use?"
+            },
+            {
+              "id": "product2.1.5",
+              "question": "Does the Aether Flow 12 feature a 3.5mm analog audio headphone jack?"
+            }
+          ]
+        },
+        {
+          "id": "product2.2",
+          "name": "Multi-Hop & Comparative Constraints (Cross-Document Stress Testing)",
+          "questions": [
+            {
+              "id": "product2.2.1",
+              "question": "How does the Flow 12's display refresh rate stepping mechanism differ from the variable refresh rate found on the Pulse 12 Pro?"
+            },
+            {
+              "id": "product2.2.2",
+              "question": "Can a user run dual physical SIM cards and a 512GB microSD card simultaneously on the Flow 12? Explain the hardware constraint."
+            },
+            {
+              "id": "product2.2.3",
+              "question": "Contrast the global retail box contents of the Aether Flow 12 with those of the Pulse 12 Pro sold in European and US markets."
+            },
+            {
+              "id": "product2.2.4",
+              "question": "How does the primary camera sensor size and lens aperture on the Flow 12 compare to the Pulse 12 Pro?"
+            }
+          ]
+        },
+        {
+          "id": "product2.3",
+          "name": "Edge Cases, Ingress & Negative Constraints",
+          "questions": [
+            {
+              "id": "product2.3.1",
+              "question": "If an Aether Flow 12 falls into a shallow bath of tap water at 30 cm depth for 5 seconds, is it protected against liquid ingress under its official IP rating? Why or why not?"
+            },
+            {
+              "id": "product2.3.2",
+              "question": "Does the Aether Flow 12 support wireless or reverse-wireless charging?"
+            },
+            {
+              "id": "product2.3.3",
+              "question": "Can a user connect the Flow 12 via USB Type-C to an external monitor to mirror the display using DisplayPort alternate mode?"
+            },
+            {
+              "id": "product2.3.4",
+              "question": "Does the device support 5G mmWave frequencies or software-based eSIM profiles?"
+            }
+          ]
+        },
+        {
+          "id": "product2.4",
+          "name": "Software Lifecycle & Battery Longevity",
+          "questions": [
+            {
+              "id": "product2.4.1",
+              "question": "What is the maximum wired charging wattage supported by the device, and how many full charge cycles is its battery rated to survive before dropping below 80% capacity?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "product3",
+      "file": "product3.txt",
+      "title": "Aether Horizon Fold",
+      "categories": [
+        {
+          "id": "product3.1",
+          "name": "Direct Fact & Hardware Extraction",
+          "questions": [
+            {
+              "id": "product3.1.1",
+              "question": "What alloy materials and cam mechanisms make up the FlexorWing hinge, and what is its minimum internal bend radius when closed?"
+            },
+            {
+              "id": "product3.1.2",
+              "question": "What are the native display resolutions, diagonal sizes, and panel technologies for both the inner foldable screen and the outer cover display?"
+            },
+            {
+              "id": "product3.1.3",
+              "question": "Where is the front-facing camera situated on the inner 7.92-inch display, and what sensor resolution does it use?"
+            },
+            {
+              "id": "product3.1.4",
+              "question": "What is the maximum wired HyperCharge wattage supported by the Horizon Fold, and how long does a 0 to 100% full charge cycle take?"
+            },
+            {
+              "id": "product3.1.5",
+              "question": "What active stylus latency and pressure sensitivity levels are supported on the internal foldable panel?"
+            }
+          ]
+        },
+        {
+          "id": "product3.2",
+          "name": "Multi-Hop & Cross-Device Disambiguation",
+          "questions": [
+            {
+              "id": "product3.2.1",
+              "question": "Contrast the global retail packaging policies of the Horizon Fold against the flagship Aether Pulse 12 Pro sold in European and North American territories."
+            },
+            {
+              "id": "product3.2.2",
+              "question": "Compare the biometric sensor placement and sensor type between the Horizon Fold, the Pulse 12 Pro, and the Flow 12."
+            },
+            {
+              "id": "product3.2.3",
+              "question": "How does the primary rear camera sensor and optical stabilization on the Horizon Fold compare to the setup on the Flow 12?"
+            },
+            {
+              "id": "product3.2.4",
+              "question": "How is the dual-cell 5,000 mAh battery divided physically across the two chassis halves of the Horizon Fold?"
+            }
+          ]
+        },
+        {
+          "id": "product3.3",
+          "name": "Edge-Case, Failure Modes & Environmental Constraints",
+          "questions": [
+            {
+              "id": "product3.3.1",
+              "question": "If a user operates the Horizon Fold in a sandy desert or beach environment and particulate matter enters the hinge, is this damage protected under its official IP rating? Explain why or why not."
+            },
+            {
+              "id": "product3.3.2",
+              "question": "Can a customer expand the internal storage capacity using a standard 1TB microSDXC card?"
+            },
+            {
+              "id": "product3.3.3",
+              "question": "How many continuous fold cycles was the hinge mechanism tested and certified to endure under room temperature versus sub-zero (-20°C) conditions?"
+            }
+          ]
+        },
+        {
+          "id": "product3.4",
+          "name": "Multitasking & Connectivity Rules",
+          "questions": [
+            {
+              "id": "product3.4.1",
+              "question": "What SIM configurations are supported on the Horizon Fold when configuring two active mobile networks simultaneously?"
+            },
+            {
+              "id": "product3.4.2",
+              "question": "What software features in AetherOS 4.0 Fold Edition enable running up to three concurrent apps side-by-side with a floating pane, and what happens when an application is opened on the cover display and unfolded?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "product4",
+      "file": "product4.txt",
+      "title": "Aether Terra 12 Rugged Edition",
+      "categories": [
+        {
+          "id": "product4.1",
+          "name": "Ingress & Rugged Certifications (Direct Extraction)",
+          "questions": [
+            {
+              "id": "product4.1.1",
+              "question": "Under what specific water pressure, temperature, and nozzle configurations was the Aether Terra 12 tested to achieve its IP69K rating?"
+            },
+            {
+              "id": "product4.1.2",
+              "question": "What are the freshwater depth and immersion duration limits specified under the Terra 12's IP68 certification, and how do they differ from typical standard smartphone thresholds?"
+            },
+            {
+              "id": "product4.1.3",
+              "question": "Which MIL-STD-810H methods and temperature parameters validate the device's operational resilience in extreme cold versus extreme heat?"
+            },
+            {
+              "id": "product4.1.4",
+              "question": "From what maximum drop height and onto what specific ground surfaces was the ArmorVault corner chassis tested to survive without failure?"
+            }
+          ]
+        },
+        {
+          "id": "product4.2",
+          "name": "Hardware Specs, Tooling & Functional Utilities",
+          "questions": [
+            {
+              "id": "product4.2.1",
+              "question": "What is the internal battery chemistry and total capacity of the Terra 12, and how many full charging cycles is it rated to endure while retaining at least 85% capacity?"
+            },
+            {
+              "id": "product4.2.2",
+              "question": "What secondary rear camera sensor is paired with the primary 50 MP unit, and what optical technology enables it to capture footage up to 15 meters in total darkness?"
+            },
+            {
+              "id": "product4.2.3",
+              "question": "What are the default out-of-the-box functions and alternative mapping options for the physical orange PTT button on the left rail?"
+            },
+            {
+              "id": "product4.2.4",
+              "question": "What are the output lumens and physical location of the dedicated emergency flashlight, and how does it operate relative to the rear camera flash?"
+            },
+            {
+              "id": "product4.2.5",
+              "question": "What tensile pull force is the integrated cast-zinc alloy lanyard carabiner loop rated to withstand?"
+            }
+          ]
+        },
+        {
+          "id": "product4.3",
+          "name": "Display, Digitizer & Environmental Operations",
+          "questions": [
+            {
+              "id": "product4.3.1",
+              "question": "What display panel technology was selected for the Terra 12 instead of AMOLED, and what operational reasons justify this choice?"
+            },
+            {
+              "id": "product4.3.2",
+              "question": "What specific features of the Glove Touch 2.0 digitizer allow field workers to operate the phone in sub-zero or heavy precipitation conditions?"
+            },
+            {
+              "id": "product4.3.3",
+              "question": "What alloy is used in the silicon packaging solder balls to prevent internal disconnects during ambient temperature swings between -30°C and +60°C?"
+            },
+            {
+              "id": "product4.3.4",
+              "question": "How loud is the front-facing mono speaker, and how many decibels of industrial background machinery noise can the dual-mic system cancel during voice calls?"
+            }
+          ]
+        },
+        {
+          "id": "product4.4",
+          "name": "Cross-Device Disambiguation & Constraint Checking",
+          "questions": [
+            {
+              "id": "product4.4.1",
+              "question": "How does the Terra 12's SIM and storage expansion tray differ from the hybrid slot architecture found on the Aether Flow 12?"
+            },
+            {
+              "id": "product4.4.2",
+              "question": "Contrast the reverse-charging capabilities of the Terra 12 (wired vs. wireless) with those of the flagship Aether Pulse 12 Pro."
+            },
+            {
+              "id": "product4.4.3",
+              "question": "Can a user charge the Terra 12 without opening the rubber silicone port flaps? Explain the hardware interface that allows this."
+            },
+            {
+              "id": "product4.4.4",
+              "question": "How does the display bezel design on the Terra 12 physically protect the screen glass during a face-down flat drop compared to the slim-bezel design of the Pulse 12 Pro?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "warranty",
+      "file": "warranty.txt",
+      "title": "Warranty terms and RMA protocol",
+      "categories": [
+        {
+          "id": "warranty.1",
+          "name": "Direct Retrieval & Policy Durations",
+          "questions": [
+            {
+              "id": "warranty.1.1",
+              "question": "What is the difference in standard warranty duration for smartphone mainframe units between the European Union / UK and North America / India?"
+            },
+            {
+              "id": "warranty.1.2",
+              "question": "How long is the warranty coverage period for out-of-box functional charging accessories such as GaN wall chargers and the Aether Pen?"
+            },
+            {
+              "id": "warranty.1.3",
+              "question": "Under what specific reporting timeframe must a customer file a Dead on Arrival (DOA) claim after carrier delivery?"
+            },
+            {
+              "id": "warranty.1.4",
+              "question": "What is the residual warranty duration applied to replaced parts or replacement devices following a completed repair?"
+            },
+            {
+              "id": "warranty.1.5",
+              "question": "What target turnaround time does the service center commit to for standard mail-in repairs?"
+            }
+          ]
+        },
+        {
+          "id": "warranty.2",
+          "name": "Multi-Hop & Battery / Degradation Rules",
+          "questions": [
+            {
+              "id": "warranty.2.1",
+              "question": "What two conditions must be simultaneously met for an in-warranty battery replacement claim to be validated on the Aether Pulse 12 Pro versus the Aether Flow 12?"
+            },
+            {
+              "id": "warranty.2.2",
+              "question": "What warranty coverage, if any, is provided for passive in-box consumables such as the pre-applied PET screen protector or clear TPU cases after 30 days of ownership?"
+            }
+          ]
+        },
+        {
+          "id": "warranty.3",
+          "name": "Exclusions, Ingress & Warranty Voiding Criteria",
+          "questions": [
+            {
+              "id": "warranty.3.1",
+              "question": "What physical or cosmetic inspection finding on the inner flexible screen of an Aether Horizon Fold immediately revokes its hinge and display warranty coverage?"
+            },
+            {
+              "id": "warranty.3.2",
+              "question": "How does flashing an unsigned custom ROM or tripping the internal hardware eFuse affect a user's eligibility for logic board replacement under warranty?"
+            },
+            {
+              "id": "warranty.3.3",
+              "question": "If a device suffers electrical port melting due to an uncertified third-party cable, is the repair covered under standard warranty?"
+            }
+          ]
+        },
+        {
+          "id": "warranty.4",
+          "name": "RMA Process, Data Liability & Shipping Workflows",
+          "questions": [
+            {
+              "id": "warranty.4.1",
+              "question": "What mandatory diagnostic procedure is automatically run on all incoming motherboards at the repair facility, and what steps must the customer take before shipping the device?"
+            },
+            {
+              "id": "warranty.4.2",
+              "question": "What information and media documentation are required from the user during the initial intake registration step on the support portal?"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

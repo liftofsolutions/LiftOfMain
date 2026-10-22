@@ -21,3 +21,6 @@ keys/
 # Editors
 .vscode/
 .idea/
+
+# Ptest run reports and server logs
+Ptest/results/
