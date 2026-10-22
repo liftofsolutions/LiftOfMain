@@ -30,6 +30,7 @@ environment wins over the file.
 | `GOOGLE_APPLICATION_CREDENTIALS` | Service account key, from the repo root   |
 | `RAG_CHUNK_MAX_TOKENS`           | Chunk size in tokens: 500, at most 1500   |
 | `RAG_CHUNK_OVERLAP_TOKENS`       | Overlap between chunks: 100 unless set    |
+| `RAG_QUERY_TOP_K`                | Chunks a query returns: 10, at most 20    |
 | `RAG_UNRAR_TOOL`                 | Optional unrar to read `.rar` with        |
 
 `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY` and `XAI_API_KEY`
@@ -61,12 +62,21 @@ project must be live (404), and the account must be a member of it (403).
 | `GET`    | `/jobs/{jobId}/status` | Where the job has got to                 |
 | `DELETE` | `/jobs/{jobId}`        | Delete a job that has not started        |
 | `GET`    | `/rags`                | The project's rags and their state       |
+| `POST`   | `/rags/{ragId}/query`  | The parts of a ready rag that match      |
 | `DELETE` | `/rags/{ragId}`        | Delete a rag: its chunks, then records   |
 
 Submit takes the document's link. `countryId` and `metadata` are optional:
 
 ```json
 {"documentLink": "https://example.com/handbook.pdf"}
+```
+
+Query takes the question. A simple rag gives its closest chunks with their
+scores, best first, as many as `RAG_QUERY_TOP_K` says; a plain-text rag
+gives its whole text as the one match.
+
+```json
+{"query": "How long does delivery take?"}
 ```
 
 A document is a `.pdf`, `.docx`, `.txt` or `.md`, or a `.zip`, `.rar` or

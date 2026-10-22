@@ -77,8 +77,8 @@ Shared logic with no endpoints (`config/`, `LLM/`, `DbAdapters/`) skips
 lives under `DbAdapters/`, never in a top-level folder of its own; a store
 that needs more than one module gets a subfolder there.
 `DbAdapters/pineconeDb/` is the only way to Pinecone: `getPineconeDb()`
-returns the shared queue (`add`, `fetch`, `update`, `delete`, `listIds`),
-worked over `MAX_CONNECTIONS` connections.
+returns the shared queue (`add`, `fetch`, `update`, `delete`, `listIds`,
+`search`), worked over `MAX_CONNECTIONS` connections.
 
 ## Testing
 

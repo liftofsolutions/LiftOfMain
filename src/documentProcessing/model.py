@@ -75,3 +75,40 @@ class ListRagsResponse(BaseModel):
 
     projectId: str
     rags: list[RagSummary]
+
+
+class QueryRagRequest(BaseModel):
+    """What to look for in a rag.
+
+    How many chunks a simple rag gives back is the server's setting,
+    `RAG_QUERY_TOP_K`; a plain-text rag always gives its whole text.
+    """
+
+    query: str = Field(min_length=1, description="The question to answer.")
+
+
+class RagMatch(BaseModel):
+    """One part of a rag that matches the query."""
+
+    text: str
+    score: float | None = Field(
+        default=None,
+        description=(
+            "How close the chunk is to the query, higher is closer; none "
+            "for a plain-text rag's whole text."
+        ),
+    )
+    fileName: str | None = Field(
+        default=None, description="The file the chunk is from."
+    )
+    chunk: int | None = Field(
+        default=None, description="The chunk's place in the rag."
+    )
+
+
+class QueryRagResponse(BaseModel):
+    """The parts of a rag that best answer a query, best first."""
+
+    ragId: str
+    strategy: str = Field(description="plainText or simpleRag.")
+    matches: list[RagMatch]

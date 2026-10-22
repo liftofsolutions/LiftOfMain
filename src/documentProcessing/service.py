@@ -1,4 +1,4 @@
-"""Rag jobs and rags: create, submit, follow, list and delete them.
+"""Rag jobs and rags: create, submit, follow, list, query and delete them.
 
 Records follow `db/knowledge-schema` and are read and written through
 `utilities`. A submitted job is run by the `JobManager`.
@@ -13,7 +13,9 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from DbAdapters import Document, deleteOperation, setOperation
+from config import getServerConfig
+from config.serverConfig import QUERY_TOP_K_ENV_VAR, requireCount
+from DbAdapters import Document, QueryMatch, deleteOperation, setOperation
 from DbAdapters.pineconeDb import getPineconeDb
 from DbAdapters.pineconeDb.pineconeDb import IDS_PER_REQUEST
 from documentProcessing import ragStrategy, utilities
@@ -44,6 +46,13 @@ OPEN_JOB_RETENTION = timedelta(days=1)
 # Runs a job may have, as `db/knowledge-schema` says: one that has failed
 # this many times is not run again.
 MAX_JOB_ATTEMPTS = 3
+
+# The stored fields of a chunk a query hands back.
+MATCH_FIELDS = [ragStrategy.PINECONE_TEXT_FIELD, "file_name", "chunk"]
+# Chunks a query of a simple rag returns when RAG_QUERY_TOP_K is not set,
+# and the most it may be set to.
+DEFAULT_QUERY_TOP_K = 10
+QUERY_TOP_K_LIMIT = 20
 
 
 def utcNow() -> datetime:
@@ -336,6 +345,83 @@ async def listRags(accountUuid: str, projectId: str) -> dict:
     rags = [ragSummaryOf(document.id, document.data) for document in stored]
     LOGGER.info("Listed %s rags of project %s.", len(rags), projectId)
     return {"projectId": projectId, "rags": rags}
+
+
+def matchOf(match: QueryMatch) -> dict:
+    """One chunk Pinecone found, as a query answers it."""
+    fields = match.metadata or {}
+    chunk = fields.get("chunk")
+    return {
+        "text": fields.get(ragStrategy.PINECONE_TEXT_FIELD, ""),
+        "score": match.score,
+        "fileName": fields.get("file_name"),
+        # Pinecone keeps every number as a float.
+        "chunk": None if chunk is None else int(chunk),
+    }
+
+
+def queryTopK() -> int:
+    """How many chunks a query of a simple rag returns, as configured.
+
+    Raises:
+        ConfigurationError: If RAG_QUERY_TOP_K is set to anything but a
+            whole number from 1 to QUERY_TOP_K_LIMIT.
+    """
+    return requireCount(
+        getServerConfig().queryTopK,
+        QUERY_TOP_K_ENV_VAR,
+        DEFAULT_QUERY_TOP_K,
+        minimum=1,
+        maximum=QUERY_TOP_K_LIMIT,
+    )
+
+
+async def queryRag(
+    accountUuid: str, projectId: str, ragId: str, query: str
+) -> dict:
+    """The parts of a ready rag that best answer `query`.
+
+    For a member of its project, as `checkAccess` checks. A rag still
+    indexing, failed or being deleted is refused. A plain text rag is small
+    enough to give whole: its text is the one match, with no score. A
+    simple rag is searched in Pinecone, which embeds the query the way it
+    embedded the chunks, and its closest chunks come back, closest first:
+    as many as `queryTopK` says. Chunks saved moments before may not be
+    found yet.
+    """
+    denied = await checkAccess(accountUuid, projectId)
+    if denied is not None:
+        return denied
+    rag = await fetchProjectRecord(utilities.RAGS, projectId, ragId)
+    if rag is None:
+        return errorResult(
+            ERROR_NOT_FOUND, f"Project {projectId!r} has no rag {ragId!r}."
+        )
+    status = rag.get("status")
+    if status != ragStrategy.RAG_STATUS_READY:
+        return errorResult(
+            ERROR_CONFLICT,
+            f"Rag {ragId!r} is {status}; only a ready rag can be queried.",
+        )
+    strategy = rag.get("strategy")
+    if strategy == ragStrategy.STRATEGY_PLAIN_TEXT:
+        matches = [
+            {
+                "text": rag.get("text", ""),
+                "score": None,
+                "fileName": None,
+                "chunk": None,
+            }
+        ]
+    else:
+        found = await getPineconeDb().search(
+            ragId, query, queryTopK(), MATCH_FIELDS
+        )
+        matches = [matchOf(match) for match in found]
+    LOGGER.info(
+        "Queried rag %s (%s): %s matches.", ragId, strategy, len(matches)
+    )
+    return {"ragId": ragId, "strategy": strategy, "matches": matches}
 
 
 def heldJobIdOf(jobs: list[Document]) -> str | None:

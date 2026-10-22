@@ -8,6 +8,7 @@ path, and a job or a rag is addressed under them:
     GET    /rag/{accountUuid}/{projectId}/jobs/{jobId}/status   status
     DELETE /rag/{accountUuid}/{projectId}/jobs/{jobId}          delete job
     GET    /rag/{accountUuid}/{projectId}/rags                  list rags
+    POST   /rag/{accountUuid}/{projectId}/rags/{ragId}/query    query rag
     DELETE /rag/{accountUuid}/{projectId}/rags/{ragId}          delete rag
 """
 
@@ -21,6 +22,8 @@ from documentProcessing.model import (
     DeleteRagJobResponse,
     DeleteRagResponse,
     ListRagsResponse,
+    QueryRagRequest,
+    QueryRagResponse,
     RagJobResponse,
     SubmitRagJobRequest,
 )
@@ -222,6 +225,41 @@ async def listRags(
             errorResponse(STATUS_INTERNAL_ERROR, INTERNAL_ERROR_DETAIL),
         )
     return logResponse(request, toResponse(listed))
+
+
+@router.post(
+    "/{accountUuid}/{projectId}/rags/{ragId}/query",
+    response_model=QueryRagResponse,
+    summary="Query a rag",
+)
+async def queryRag(
+    request: Request,
+    accountUuid: str,
+    projectId: str,
+    ragId: str,
+    ragQuery: QueryRagRequest,
+) -> dict | JSONResponse:
+    """The parts of a ready rag that best answer the query."""
+    logRequest(
+        request,
+        {
+            "accountUuid": accountUuid,
+            "projectId": projectId,
+            "ragId": ragId,
+            **ragQuery.model_dump(),
+        },
+    )
+    try:
+        answered = await service.queryRag(
+            accountUuid, projectId, ragId, ragQuery.query
+        )
+    except Exception:
+        LOGGER.exception("Querying rag %s failed.", ragId)
+        return logResponse(
+            request,
+            errorResponse(STATUS_INTERNAL_ERROR, INTERNAL_ERROR_DETAIL),
+        )
+    return logResponse(request, toResponse(answered))
 
 
 @router.delete(

@@ -11,11 +11,13 @@ beside it speaks to the index; nothing outside this folder builds one, and
     await getPineconeDb().update(namespace, recordId, metadata)
     deleted = await getPineconeDb().delete(namespace, ids)
     ids = await getPineconeDb().listIds(namespace)
+    matches = await getPineconeDb().search(namespace, text, topK, fields)
 
 `getPineconeDb` hands out one shared `PineconeDb`. Each operation is cut
 into jobs no bigger than one Pinecone request - `RECORDS_PER_ADD` records,
 `IDS_PER_REQUEST` ids, one record per update - and every job goes on one
-queue; a listing is one job, however many pages it walks.
+queue; a listing is one job, however many pages it walks, and so is a
+search.
 `MAX_CONNECTIONS` workers take jobs off it, each over its own connection,
 so however many callers there are, no more than that many requests are
 ever in flight.
@@ -27,8 +29,8 @@ and a fetch made after a write sees that write. Jobs on different records do
 not wait for each other. A job waits for the earlier one to finish, not to
 succeed: a delete after a failed add still runs.
 
-A listing touches no record by id, so it waits for nothing, and like any
-read it may lag writes made just before it.
+A listing or a search touches no record by id, so it waits for nothing,
+and like any read it may lag writes made just before it.
 
 A job with nothing to wait for goes straight on the queue; one that depends
 on others is held off it, and goes on when the last of them finishes. So a
@@ -57,7 +59,7 @@ from config.serverConfig import (
     PINECONE_INDEX_NAME_ENV_VAR,
     requireSetting,
 )
-from DbAdapters import VectorRecord
+from DbAdapters import QueryMatch, VectorRecord
 from DbAdapters.pineconeDb.pineconeAdapter import PineconeAdapter
 
 LOGGER = logging.getLogger(__name__)
@@ -76,6 +78,7 @@ OPERATION_FETCH = "fetch"
 OPERATION_UPDATE = "update"
 OPERATION_DELETE = "delete"
 OPERATION_LIST = "list"
+OPERATION_SEARCH = "search"
 
 
 class PineconeDbError(RuntimeError):
@@ -101,7 +104,7 @@ class PineconeJob:
 
 def recordIdsOf(operation: str, payload: Any) -> list[str]:
     """The ids of the records a job's payload touches."""
-    if operation == OPERATION_LIST:
+    if operation in (OPERATION_LIST, OPERATION_SEARCH):
         return []
     if operation == OPERATION_ADD:
         recordIds = [
@@ -180,6 +183,24 @@ class PineconeDb:
             OPERATION_LIST, namespace, [namespace], 1
         )
         return recordIds
+
+    async def search(
+        self,
+        namespace: str,
+        text: str,
+        topK: int,
+        fields: list[str] | None = None,
+    ) -> list[QueryMatch]:
+        """The `topK` records in `namespace` closest to `text`, closest first.
+
+        The index embeds `text` the way it embedded the records. Each match
+        carries the stored `fields` on its `metadata`; every field when
+        None. A namespace never written to has no matches.
+        """
+        [matches] = await self._submitAll(
+            OPERATION_SEARCH, namespace, [(text, topK, fields)], 1
+        )
+        return matches
 
     async def close(self) -> None:
         """Stop the workers, fail what is still queued, close the connection."""
@@ -348,6 +369,11 @@ class PineconeDb:
             return outcome.appliedCount
         if job.operation == OPERATION_LIST:
             return await self._adapter.listVectorIds(namespace=job.namespace)
+        if job.operation == OPERATION_SEARCH:
+            [(text, topK, fields)] = job.payload
+            return await self._adapter.searchByText(
+                text, topK=topK, namespace=job.namespace, fields=fields
+            )
         raise PineconeDbError(f"No Pinecone operation {job.operation!r}.")
 
 

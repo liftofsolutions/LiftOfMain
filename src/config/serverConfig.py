@@ -56,6 +56,7 @@ MONGODB_DATABASE_ENV_VAR = "MONGODB_DATABASE"
 UNRAR_TOOL_ENV_VAR = "RAG_UNRAR_TOOL"
 CHUNK_MAX_TOKENS_ENV_VAR = "RAG_CHUNK_MAX_TOKENS"
 CHUNK_OVERLAP_TOKENS_ENV_VAR = "RAG_CHUNK_OVERLAP_TOKENS"
+QUERY_TOP_K_ENV_VAR = "RAG_QUERY_TOP_K"
 
 # The API key each LLM provider in `LLM/configLLM.json` is built with.
 LLM_API_KEY_ENV_VARS = {
@@ -101,6 +102,7 @@ class ServerConfig:
     unrarTool: str = ""
     chunkMaxTokens: str = ""
     chunkOverlapTokens: str = ""
+    queryTopK: str = ""
     llmApiKeys: dict = field(default_factory=dict)
 
     @property
@@ -215,6 +217,7 @@ def getServerConfig() -> ServerConfig:
         unrarTool=read(UNRAR_TOOL_ENV_VAR),
         chunkMaxTokens=read(CHUNK_MAX_TOKENS_ENV_VAR),
         chunkOverlapTokens=read(CHUNK_OVERLAP_TOKENS_ENV_VAR),
+        queryTopK=read(QUERY_TOP_K_ENV_VAR),
         llmApiKeys={
             provider: apiKey
             for provider, envVarName in LLM_API_KEY_ENV_VARS.items()
