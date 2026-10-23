@@ -19,6 +19,15 @@ chatModel = buildChatModel("chatAgent", "openai", "gpt-5.5")
 reply = await chatModel.generateResponse(humanMessage, context)
 ```
 
+A fourth argument replaces settings from `configLLM.json` one by one; the
+chat model nodes in `src/agents/nodes/` pass their own temperature this way:
+
+```python
+chatModel = buildChatModel(
+    "chatAgent", "openai", "gpt-5.5", {"temperature": 0.3}
+)
+```
+
 `ChatModel` holds `role`, `provider`, `model`, `settings`, `systemPrompt` and
 `llm`, the LangChain chat model that LangGraph nodes use directly.
 `generateResponse` sends the system prompt, then the context and human
