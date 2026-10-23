@@ -64,14 +64,19 @@ class ChatModel:
         return await self.llm.ainvoke(messages)
 
 
-def buildChatModel(role: str, provider: str, model: str) -> ChatModel:
+def buildChatModel(
+    role: str, provider: str, model: str, overrides: dict | None = None
+) -> ChatModel:
     """The chat model for a role on the given provider and model.
+
+    `overrides` replace the model's settings from `configLLM.json`, one by
+    one - a chat model node's own temperature, say.
 
     Raises:
         KeyError: If the provider or model is not in `configLLM.json`, or
             the role is not in `systemPrompt.json`.
     """
-    settings = CONFIG_LLM[provider][model]
+    settings = {**CONFIG_LLM[provider][model], **(overrides or {})}
     apiKey = getServerConfig().llmApiKeys.get(provider)
     # Without a configured key the provider falls back to its own lookup.
     keyArgs = {"api_key": apiKey} if apiKey else {}
