@@ -1,19 +1,33 @@
-// Agent schema: agent_templates (with embedded nodes and triggers), node_types, agents, credentials.
+// Agent schema: agent_templates (with embedded nodes, edges and triggers), node_types, agents, credentials.
 // Connected to the Project schema through project_id, and to the User schema through created_by.
 // Keys: PK = primary key, FK = foreign key, UNIQUE = no two values share it in the stated scope.
 //
 // Rules (enforced by the backend on every write; clients never write these collections directly):
 // - agent_templates.project_id missing = premade platform template; set = the project's own template.
+// - agent_templates.rag_id → a rag of the template's project (Knowledge
+//   schema); required when rag_enabled is true.
 // - node_types.project_id missing = platform node type; set = the project's own preset on an existing handler.
 // - node.node_type_id → a platform node type, or one from the template's project.
 // - node.credential_id → a credential from the template's project. Platform templates hold no credentials;
 //   using a premade template copies it into the project first.
 // - trigger.node_id → a node in the same template whose node type has category "io".
 // - agents.template_id → a template from the agent's project.
-// - node.id, node.name and trigger.id are UNIQUE within a template.
+// - node.id and trigger.id are UNIQUE within a template; node.name is a
+//   label, and nodes may share one.
+// - edges[] each lead from one node to one node of the same template, by
+//   id, or from INPUT / to OUTPUT; no node has an id in KEPT_NODE_IDS. A
+//   graph has one edge from INPUT and one or more to OUTPUT; nothing
+//   leads to INPUT or leaves OUTPUT, and every other node has an edge out.
 //
 // Runtime:
 // - A node's effective config = mergeConfig(node_types.config, node.config).
+// - The agent's graph is the nodes its edges name, wired as they say: a run
+//   comes in at INPUT with its message and goes out at OUTPUT, one node at
+//   a time, and each node reads the conversation so far and adds its
+//   answer. A node with several edges out picks where the run goes on:
+//   its model reads each node they lead to by name and config.description.
+//   The agent's answer is the last message, taken at OUTPUT; a run of more
+//   than 25 steps is refused.
 // - Webhook URL: /hooks/{projectId}/{agentId}/{triggerId}. Cron triggers: one scheduler job per trigger calls the same URL.
 // - Inbound pipeline: read agent → read template → find the enabled trigger and its node (in memory)
 //   → load the node's credential (same project) → verify the provider's signature → process.
@@ -53,11 +67,14 @@ export interface NodeType {
 
 // A node is an instance of a node type inside one template.
 export interface AgentNode {
-  id: string;             // UUID v4. UNIQUE within the template
+  id: string;             // UUID v4. UNIQUE within the template; edges name a node by it
   node_type_id: string;   // FK → node_types._id
   credential_id?: string; // FK → credentials._id, same project as the template
-  name: string;           // UNIQUE within the template, e.g. "reply", "web_search", "whatsapp"
-  config: Config;         // overrides node_types.config, e.g. { model, system_prompt } or { cron, timezone }
+  name: string;           // a label, e.g. "reply", "web_search"; nodes may share one
+  // Overrides node_types.config, e.g. { model, system_prompt } or
+  // { cron, timezone }. Its description is what a node picking where a
+  // run goes next reads of this one.
+  config: Config;
   created_at: Date;
   updated_at: Date;
 }
@@ -73,13 +90,33 @@ export interface Trigger {
   updated_at: Date;
 }
 
+// The two nodes every graph has, which edges name by these ids: where a
+// run comes in, starting the conversation with the message a trigger or
+// a query brought, and where it goes out, the last message its answer.
+export const INPUT = "input";
+export const OUTPUT = "output";
+// Ids no node of a template may have: those, and LangGraph's own.
+export const KEPT_NODE_IDS = [INPUT, OUTPUT, "__start__", "__end__"];
+
+// Wires one node of a template to another, by id: which node runs after
+// which, so where each node's output goes. { from: "<draft>", to:
+// "<review>" } - <draft> standing for the id of a node named draft -
+// runs review after draft. A node with several edges out picks one of
+// the nodes they lead to as a run goes on, so an edge back makes a loop.
+export interface Edge {
+  from: string;
+  to: string;
+}
+
 export interface AgentTemplate {
   _id: string;            // PK. UUID v4
   project_id?: string;    // FK → projects._id. Missing = premade platform template
   name: string;
   description?: string;
-  rag_enabled: boolean;   // use the project's knowledge base (Knowledge module)
+  rag_enabled: boolean;   // use a knowledge base of the project (Knowledge schema)
+  rag_id?: string;        // FK → rags._id, same project; required when rag_enabled
   nodes: AgentNode[];
+  edges: Edge[];          // one edge from INPUT; one or more to OUTPUT
   triggers: Trigger[];
   is_active: boolean;
   created_at: Date;
@@ -158,13 +195,13 @@ export function validateTemplate(
 ): string[] {
   const errors: string[] = [];
   const nodeIds = new Set<string>();
-  const nodeNames = new Set<string>();
 
   for (const node of template.nodes) {
     if (nodeIds.has(node.id)) errors.push(`node ${node.id}: duplicate id`);
-    if (nodeNames.has(node.name)) errors.push(`node ${node.id}: duplicate name "${node.name}"`);
+    if (KEPT_NODE_IDS.includes(node.id)) {
+      errors.push(`node ${node.id}: its id is one the graph keeps`);
+    }
     nodeIds.add(node.id);
-    nodeNames.add(node.name);
 
     const type = nodeTypes.get(node.node_type_id);
     if (!type) {
@@ -183,6 +220,35 @@ export function validateTemplate(
       else if (credential.project_id !== template.project_id) {
         errors.push(`node ${node.name}: credential belongs to another project`);
       }
+    }
+  }
+
+  if (template.edges.length === 0) errors.push("edges: none to build a graph of");
+  // Where each node goes on to: the nodes its edges lead to.
+  const nextNodes = new Map<string, Set<string>>();
+  const reached = new Set<string>();
+  template.edges.forEach((edge, index) => {
+    const where = `edge ${index}`;
+    if (edge.from === OUTPUT) errors.push(`${where}: leaves ${OUTPUT}`);
+    if (edge.to === INPUT) errors.push(`${where}: leads to ${INPUT}`);
+    for (const nodeId of [edge.from, edge.to]) {
+      if (nodeId !== INPUT && nodeId !== OUTPUT && !nodeIds.has(nodeId)) {
+        errors.push(`${where}: no node of id "${nodeId}" in this template`);
+      }
+    }
+    if (!nextNodes.has(edge.from)) nextNodes.set(edge.from, new Set());
+    nextNodes.get(edge.from)!.add(edge.to);
+    reached.add(edge.to);
+  });
+  const firstNodes = nextNodes.get(INPUT)?.size ?? 0;
+  if (firstNodes === 0) errors.push(`edges: none leaves ${INPUT}`);
+  if (firstNodes > 1) {
+    errors.push(`edges: ${firstNodes} leave ${INPUT}; a run comes in at one`);
+  }
+  if (!reached.has(OUTPUT)) errors.push(`edges: none reaches ${OUTPUT}`);
+  for (const nodeId of reached) {
+    if (nodeIds.has(nodeId) && !nextNodes.has(nodeId)) {
+      errors.push(`node ${nodeId}: no edge out; every node leads on`);
     }
   }
 

@@ -1,8 +1,10 @@
 // node_types, agent_templates, agents and credentials collections for MongoDB: validators + indexes.
 // Run with mongosh:  mongosh "<connection string>/<db>" agents.mongo.js
 // Safe to re-run. Extra fields are allowed, so the schema stays flexible.
-// Cross-document rules (same project, trigger → io node, unique names within a template)
-// are checked by the backend before saving; see validateTemplate() in agents.types.ts.
+// Cross-document rules (same project, trigger → io node, unique ids within a
+// template, edges naming the template's nodes by id, one edge from "input")
+// are checked by the backend before saving; see validateTemplate() in
+// agents.types.ts.
 
 const uuid = {
   bsonType: "string",
@@ -55,21 +57,43 @@ const trigger = {
   },
 };
 
+// A node as an edge names it, by id; "input" and "output" are the two
+// nodes every graph has, where a run comes in and where it goes out.
+const nodeRef = { oneOf: [uuid, { enum: ["input", "output"] }] };
+
+// Wires one node to one node, by id: { from, to }. See Edge in
+// agents.types.ts.
+const edge = {
+  bsonType: "object",
+  required: ["from", "to"],
+  properties: {
+    from: nodeRef,
+    to: nodeRef,
+  },
+};
+
 const agentTemplatesValidator = {
   $jsonSchema: {
     bsonType: "object",
-    required: ["_id", "name", "rag_enabled", "nodes", "triggers", "is_active", "created_at", "updated_at"],
+    required: ["_id", "name", "rag_enabled", "nodes", "edges", "triggers", "is_active", "created_at", "updated_at"],
     properties: {
       _id: uuid,
       project_id: uuid, // FK → projects._id. Missing = premade platform template
       name: { bsonType: "string", minLength: 1, maxLength: 120 },
       description: { bsonType: "string", maxLength: 2000 },
       rag_enabled: { bsonType: "bool" },
+      rag_id: uuid, // FK → rags._id (Knowledge schema)
       nodes: { bsonType: "array", items: node },
+      edges: { bsonType: "array", minItems: 1, items: edge }, // the graph
       triggers: { bsonType: "array", items: trigger },
       is_active: { bsonType: "bool" },
       ...timestamps,
     },
+    // A template with rag_enabled names its knowledge base in rag_id.
+    anyOf: [
+      { properties: { rag_enabled: { enum: [false] } } },
+      { required: ["rag_id"] },
+    ],
   },
 };
 

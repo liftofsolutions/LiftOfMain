@@ -107,6 +107,32 @@ created -> submitted -> running -> done | failed
 - Jobs are held in memory, so a restart drops the waiting ones; submit
   them again.
 
+### Agents
+
+An agent is for public use: it needs no account, only the project it
+belongs to.
+
+| Method | Path                                  | Does                            |
+| ------ | ------------------------------------- | ------------------------------- |
+| `POST` | `/agents/{projectId}/{agentId}/query` | The agent's answer to a message |
+
+```json
+{"message": "Do you deliver to Pune?"}
+```
+
+It answers `{"agentId": "...", "answer": "..."}`. The agent is built from
+its template on its first query - the nodes its `edges` wire, compiled
+into a LangGraph graph; see [db/agent-schema/](db/agent-schema/README.md) -
+and kept for the next ones: ten agents at most, the least recently used
+let go first.
+
+| Status | When                                                       |
+| ------ | ---------------------------------------------------------- |
+| 404    | The project has no such agent                              |
+| 409    | The agent is paused, cannot be built, or ran past 25 steps |
+| 422    | The message is empty                                       |
+| 500    | Anything else; the details go to the log                   |
+
 ## Tests
 
 ```bash
@@ -126,6 +152,8 @@ and project, and can be run on its own.
 ## More
 
 - [docs/](docs/README.md): architecture, database adapters, LLM, testing
+- [db/agent-schema/](db/agent-schema/README.md): agents, their templates
+  and the graphs those wire
 - [db/knowledge-schema/](db/knowledge-schema/README.md): the rag and job
   records
 - [CLAUDE.md](CLAUDE.md): the rules for code in this repository

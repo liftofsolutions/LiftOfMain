@@ -1,5 +1,8 @@
 """Every kind of node an agent can reserve, the base they share, and the
-`Credential` they are reserved with, which is never shown.
+`Credential` they are reserved with, which is never shown; and the nodes
+an agent builds itself, never reserved: the special nodes every graph
+has, `InputNode` and `OutputNode`, and the `ChoosingNode` a chat model
+node with several edges out runs as.
 
     from agents.nodes import NODE_CLASSES, Credential, NodeBase
 
@@ -18,6 +21,7 @@ off without a deploy.
 
 from agents.nodes.chatModelNode import (
     ChatModelNode,
+    ChoosingNode,
     DeepSeekChatNode,
     GeminiChatNode,
     OpenAIChatNode,
@@ -25,6 +29,14 @@ from agents.nodes.chatModelNode import (
 )
 from agents.nodes.credential import Credential
 from agents.nodes.nodeBase import NodeBase
+from agents.nodes.specialNodes import (
+    INPUT_NODE_ID,
+    OUTPUT_ABOUT,
+    OUTPUT_NODE_ID,
+    SPECIAL_NODE_IDS,
+    InputNode,
+    OutputNode,
+)
 
 # Every kind of node that can be reserved, by its handler.
 NODE_CLASSES: dict[str, type[NodeBase]] = {
@@ -38,12 +50,19 @@ NODE_CLASSES: dict[str, type[NodeBase]] = {
 }
 
 __all__ = [
+    "INPUT_NODE_ID",
     "NODE_CLASSES",
+    "OUTPUT_ABOUT",
+    "OUTPUT_NODE_ID",
+    "SPECIAL_NODE_IDS",
     "ChatModelNode",
+    "ChoosingNode",
     "Credential",
     "DeepSeekChatNode",
     "GeminiChatNode",
+    "InputNode",
     "NodeBase",
     "OpenAIChatNode",
+    "OutputNode",
     "XAIChatNode",
 ]

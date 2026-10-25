@@ -15,6 +15,34 @@
       "updated_at": "2026-10-01T09:00:00Z"
     },
     {
+      "_id": "57e8cb90-0092-4509-aa6a-447d255d64ab",
+      "category": "chat_model",
+      "handler": "openai_chat",
+      "name": "OpenAI chat",
+      "config": {
+        "model": "gpt-5.4-mini",
+        "temperature": 0.7,
+        "max_tokens": 1024
+      },
+      "is_active": true,
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-10-01T09:00:00Z"
+    },
+    {
+      "_id": "d6ada8bb-d9be-4bab-ae70-a611544d4e99",
+      "category": "chat_model",
+      "handler": "gemini_chat",
+      "name": "Gemini chat",
+      "config": {
+        "model": "gemini-3.5-flash",
+        "temperature": 0.7,
+        "max_tokens": 1024
+      },
+      "is_active": true,
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-10-01T09:00:00Z"
+    },
+    {
       "_id": "69f06d0f-56e5-4778-9887-2d24c1d824e6",
       "category": "tool",
       "handler": "tavily_search",
@@ -94,17 +122,87 @@
     "name": "Acme sales assistant",
     "description": "Answers product questions on WhatsApp and sends a daily follow-up.",
     "rag_enabled": true,
+    "rag_id": "3700255f-a07c-4820-86eb-ba61fb732f77",
     "nodes": [
       {
+        "id": "3b2e850e-2eba-4118-807d-0fbcf776fc84",
+        "node_type_id": "57e8cb90-0092-4509-aa6a-447d255d64ab",
+        "name": "classify",
+        "config": {
+          "temperature": 0,
+          "system_prompt": "Say in one line what the customer wants.",
+          "description": "Reads the message, and picks who answers it."
+        },
+        "created_at": "2026-10-25T09:00:00Z",
+        "updated_at": "2026-10-25T09:00:00Z"
+      },
+      {
+        "id": "5c93b16a-e13e-4cb5-9b17-9508db112842",
+        "node_type_id": "d6ada8bb-d9be-4bab-ae70-a611544d4e99",
+        "name": "facts",
+        "config": {
+          "system_prompt": "List the price, delivery and warranty of it.",
+          "description": "For a sales question: the facts of the product."
+        },
+        "created_at": "2026-10-25T09:00:00Z",
+        "updated_at": "2026-10-25T09:00:00Z"
+      },
+      {
+        "id": "0c461a54-01e8-4dec-b85a-94707cf5642f",
+        "node_type_id": "57e8cb90-0092-4509-aa6a-447d255d64ab",
+        "name": "draft",
+        "config": {
+          "system_prompt": "Write the reply from the facts and the review.",
+          "description": "Writes the reply, or writes it again."
+        },
+        "created_at": "2026-10-25T09:00:00Z",
+        "updated_at": "2026-10-25T09:00:00Z"
+      },
+      {
+        "id": "24c9905a-7c63-4380-b55d-341065ef7e15",
+        "node_type_id": "57e8cb90-0092-4509-aa6a-447d255d64ab",
+        "name": "review",
+        "config": {
+          "model": "gpt-5.5",
+          "system_prompt": "Check the draft is right and polite.",
+          "description": "Checks the draft reply."
+        },
+        "created_at": "2026-10-25T09:00:00Z",
+        "updated_at": "2026-10-25T09:00:00Z"
+      },
+      {
         "id": "473b3fd6-5886-40fc-bd5a-a5d414591bf2",
-        "node_type_id": "9788e43c-dbf2-48d9-bed0-5da33fdc566a",
+        "node_type_id": "57e8cb90-0092-4509-aa6a-447d255d64ab",
         "name": "reply",
         "config": {
           "temperature": 0.3,
-          "system_prompt": "You are Acme's sales assistant. Answer briefly and politely."
+          "system_prompt": "Give the customer the last draft, as it is.",
+          "description": "Sends the customer the draft the review passed."
         },
         "created_at": "2026-10-05T06:30:00Z",
-        "updated_at": "2026-10-05T06:30:00Z"
+        "updated_at": "2026-10-25T09:00:00Z"
+      },
+      {
+        "id": "260c57ed-ba07-4cd2-b73c-546b6c3e7706",
+        "node_type_id": "57e8cb90-0092-4509-aa6a-447d255d64ab",
+        "name": "apology",
+        "config": {
+          "system_prompt": "Apologise, and say what Acme will do next.",
+          "description": "For a complaint: an apology, and what comes next."
+        },
+        "created_at": "2026-10-25T09:00:00Z",
+        "updated_at": "2026-10-25T09:00:00Z"
+      },
+      {
+        "id": "e3877987-c576-4a8e-8763-a8a498d2f775",
+        "node_type_id": "d6ada8bb-d9be-4bab-ae70-a611544d4e99",
+        "name": "handoff",
+        "config": {
+          "system_prompt": "Say a person from Acme will reply soon.",
+          "description": "For anything else: a person will reply."
+        },
+        "created_at": "2026-10-25T09:00:00Z",
+        "updated_at": "2026-10-25T09:00:00Z"
       },
       {
         "id": "bffe1424-267a-4ef6-9c05-1cc9c9a62f15",
@@ -143,6 +241,40 @@
         "updated_at": "2026-10-05T06:30:00Z"
       }
     ],
+    "edges": [
+      {"from": "input", "to": "3b2e850e-2eba-4118-807d-0fbcf776fc84"},
+      {
+        "from": "3b2e850e-2eba-4118-807d-0fbcf776fc84",
+        "to": "5c93b16a-e13e-4cb5-9b17-9508db112842"
+      },
+      {
+        "from": "3b2e850e-2eba-4118-807d-0fbcf776fc84",
+        "to": "260c57ed-ba07-4cd2-b73c-546b6c3e7706"
+      },
+      {
+        "from": "3b2e850e-2eba-4118-807d-0fbcf776fc84",
+        "to": "e3877987-c576-4a8e-8763-a8a498d2f775"
+      },
+      {
+        "from": "5c93b16a-e13e-4cb5-9b17-9508db112842",
+        "to": "0c461a54-01e8-4dec-b85a-94707cf5642f"
+      },
+      {
+        "from": "0c461a54-01e8-4dec-b85a-94707cf5642f",
+        "to": "24c9905a-7c63-4380-b55d-341065ef7e15"
+      },
+      {
+        "from": "24c9905a-7c63-4380-b55d-341065ef7e15",
+        "to": "0c461a54-01e8-4dec-b85a-94707cf5642f"
+      },
+      {
+        "from": "24c9905a-7c63-4380-b55d-341065ef7e15",
+        "to": "473b3fd6-5886-40fc-bd5a-a5d414591bf2"
+      },
+      {"from": "473b3fd6-5886-40fc-bd5a-a5d414591bf2", "to": "output"},
+      {"from": "260c57ed-ba07-4cd2-b73c-546b6c3e7706", "to": "output"},
+      {"from": "e3877987-c576-4a8e-8763-a8a498d2f775", "to": "output"}
+    ],
     "triggers": [
       {
         "id": "d9d81456-5f87-4b46-80e1-0c4d39b36ec7",
@@ -163,7 +295,7 @@
     ],
     "is_active": true,
     "created_at": "2026-10-05T06:30:00Z",
-    "updated_at": "2026-10-05T06:30:00Z"
+    "updated_at": "2026-10-25T09:00:00Z"
   },
   "agent": {
     "_id": "88f95300-7453-4609-b685-2c424cc181d5",

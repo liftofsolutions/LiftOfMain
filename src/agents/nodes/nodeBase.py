@@ -1,8 +1,8 @@
 """The base every node is built on: what an agent reserves, LangGraph runs.
 
-A node is a LangGraph node. `graph.add_node(node.name, node)` adds it to
-a graph, which awaits it with the graph's state and merges the dict it
-returns into that state.
+A node is a LangGraph node. `graph.add_node(node.nodeId, node)` adds it
+to a graph, which awaits it with the graph's state and merges the dict
+it returns into that state.
 
     class WhatsAppNode(NodeBase):
         handler = "whatsapp"
@@ -24,8 +24,8 @@ reserve one:
 A node is built as one node of an agent's template, for good: its
 `nodeId` and `name` are that node's `id` and `name` in `agent_templates`,
 and neither can change. The name is a slug, such as `reply` or
-`web_search`: it is the node's name in the graph, and the tool name a
-model knows it by.
+`web_search`: the tool name a model knows it by. A graph holds the node
+under its id, as two nodes of a template may share a name.
 
 What changes is what a node holds for one reservation. The `NodeManager`
 reserves nodes and releases them: reserving one calls `configure`, which
@@ -47,12 +47,13 @@ Each node also says what it does, for a model to read: its class's
 its own node one. `about()` puts the node in LangChain's tool format, so
 binding it to a chat model - `llm.bind_tools([node.about()])` - is how
 the model learns the node is there, what it is called and what it does,
-and can ask for it with a tool call.
+and can ask for it with a tool call. A node picking where a run goes
+next reads the nodes it may pick the same way: by name, and what they
+do.
 
-So an agent's graph is built for one run, from the nodes it reserves:
-reserve them, add them to a graph, run it, release them. Building and
-compiling a small graph takes under a millisecond. A graph kept after
-its run would hold nodes that may already be reserved by someone else.
+So an agent's graph is built of the nodes it reserves, and kept with
+them: they stay reserved to that agent, and no one else, until it
+releases them.
 """
 
 import copy
