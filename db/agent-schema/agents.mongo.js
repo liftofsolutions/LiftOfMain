@@ -1,4 +1,5 @@
-// node_types, agent_templates, agents and credentials collections for MongoDB: validators + indexes.
+// node_types, agent_templates, agents, credentials and agent_memory collections for MongoDB:
+// validators + indexes.
 // Run with mongosh:  mongosh "<connection string>/<db>" agents.mongo.js
 // Safe to re-run. Extra fields are allowed, so the schema stays flexible.
 // Cross-document rules (same project, trigger → io node, unique ids within a
@@ -142,6 +143,20 @@ const credentialsValidator = {
   },
 };
 
+const agentMemoryValidator = {
+  $jsonSchema: {
+    bsonType: "object",
+    required: ["agent_id", "project_id", "convo_id", "chat_history", "updated_at"],
+    properties: {
+      agent_id: uuid,   // FK → agents._id
+      project_id: uuid, // FK → projects._id
+      convo_id: uuid,   // the conversation's id, the caller's pick
+      chat_history: { bsonType: "object" }, // the nodes' own, in any shape
+      updated_at: { bsonType: "date" },
+    },
+  },
+};
+
 function upsertCollection(name, validator) {
   const options = { validator, validationLevel: "strict", validationAction: "error" };
   if (db.getCollectionNames().includes(name)) {
@@ -155,6 +170,7 @@ upsertCollection("node_types", nodeTypesValidator);
 upsertCollection("agent_templates", agentTemplatesValidator);
 upsertCollection("agents", agentsValidator);
 upsertCollection("credentials", credentialsValidator);
+upsertCollection("agent_memory", agentMemoryValidator);
 
 // node_types: platform types (project_id missing) and a project's own presets.
 db.node_types.createIndex({ project_id: 1 }, { name: "project_id" });
@@ -169,4 +185,10 @@ db.agents.createIndex({ template_id: 1 }, { name: "template_id" });
 // credentials: a project's credentials.
 db.credentials.createIndex({ project_id: 1 }, { name: "project_id" });
 
-print("node_types, agent_templates, agents and credentials ready");
+// agent_memory: one chat history per agent and conversation.
+db.agent_memory.createIndex(
+  { agent_id: 1, convo_id: 1 },
+  { name: "agent_convo", unique: true },
+);
+
+print("node_types, agent_templates, agents, credentials and agent_memory ready");

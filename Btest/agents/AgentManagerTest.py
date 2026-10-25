@@ -3,9 +3,11 @@ an LRU of its own, and run on queries.
 
 Firestore is a `FakeFirestore`, holding the records of `db/agent-schema`
 an agent is built from - an agent; its template, with a reply node and a
-WhatsApp node; their node types - and keeping every read. memoryDb is a
-fresh one for each test, with the agent caches registered, and the chat
-model's provider is `RecordingModel`, which answers with ANSWER.
+WhatsApp node; their node types - and the chat history of the agent's
+conversations, keeping every read and write. memoryDb is a fresh one for
+each test,
+with the agent caches registered, and the chat model's provider is
+`RecordingModel`, which answers with ANSWER.
 Everything between is real: `agentStore`, `loadAgent`, the node manager,
 the chat model node, LangGraph and the service.
 
@@ -23,8 +25,9 @@ the chat model node, LangGraph and the service.
    comes in at the input node and goes out at the output node, and one
    going on past the step limit is refused. Triggers: one can start the
    agent if its template has it, enabled, on one of its nodes.
-3. Records: they are cached in memoryDb, at most 100 a collection, the
-   least recently used dropped first, so building again reads nothing.
+3. Records: they are cached in memoryDb, at most 100 a collection - and
+   2000 conversations' chat history - the least recently used dropped
+   first, so building again reads nothing.
 4. Kept agents: a built agent is kept, ten at most, the least recently
    used dropped first and its node released - once its running query is
    answered; a dropped one is built again on its next query.
@@ -32,14 +35,23 @@ the chat model node, LangGraph and the service.
    queries at once share one load, even one that fails; a cancelled
    query leaves the load to the others; an agent dropped while its query
    waited is loaded again; and an agent not kept is built.
-6. Service: anyone gets the agent's answer - no account, and no project
-   record, is read - agent errors come back as error kinds, and every
-   answer fits the route's response model.
+6. Conversations: a query of none keeps nothing; a conversation's first
+   query starts its chat history empty, and the history a run ends with
+   is saved, to Firestore and memoryDb, so the next query reads it from
+   memoryDb - or Firestore, once it is dropped. Nodes - `ScriptedNode`s
+   here - read the history and change it, whole or in place; a run that
+   fails saves nothing and leaves the cached history as it was, and a
+   conversation is one agent's alone. Each node keeps its details for
+   the run under its id.
+7. Service: anyone gets the agent's answer, in a conversation or none -
+   no account, and no project record, is read - agent errors come back
+   as error kinds, and every answer fits the route's response model.
 
     uv run pytest Btest/agents -q
 """
 
 import asyncio
+import copy
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -54,13 +66,26 @@ from agents.agent import (
     MAX_RUN_STEPS,
     AgentNotFoundError,
     AgentNotRunnableError,
+    Reply,
     mergeConfig,
+    mergeNodeDetails,
 )
 from agents.agentManager import AgentManager
-from agents.agentStore import AGENT_TEMPLATES, AGENTS, NODE_TYPES
+from agents.agentStore import (
+    AGENT_MEMORY,
+    AGENT_TEMPLATES,
+    AGENTS,
+    NODE_TYPES,
+)
 from agents.model import QueryAgentResponse
 from agents.nodeManager import NodeManager
-from agents.nodes import INPUT_NODE_ID, OUTPUT_ABOUT, OUTPUT_NODE_ID
+from agents.nodes import (
+    INPUT_NODE_ID,
+    NODE_CLASSES,
+    OUTPUT_ABOUT,
+    OUTPUT_NODE_ID,
+    NodeBase,
+)
 from config import ServerConfig
 from DbAdapters import Document
 from DbAdapters.memoryDb import EVICTION_LRU, MemoryDb
@@ -76,12 +101,14 @@ TEMPLATE_ID = "8f32ea63-10e7-4105-a05d-ea0c7c02ff52"
 CHAT_TYPE_ID = "9788e43c-dbf2-48d9-bed0-5da33fdc566a"
 WHATSAPP_TYPE_ID = "1b06fcd1-73a2-4703-a9bc-00ae5a96a10a"
 SEARCH_TYPE_ID = "69f06d0f-56e5-4778-9887-2d24c1d824e6"
+SCRIPTED_TYPE_ID = "3c5f1d8a-2b47-4e9c-9a61-7f0e8d2c4b15"
 REPLY_NODE_ID = "473b3fd6-5886-40fc-bd5a-a5d414591bf2"
 WHATSAPP_NODE_ID = "9e60cc8c-e30f-44f7-b025-2c613f181635"
 SEARCH_NODE_ID = "bffe1424-267a-4ef6-9c05-1cc9c9a62f15"
 CREDENTIAL_ID = "f833e685-a764-47c5-a765-5a1bda2c8ce4"
 TRIGGER_ID = "d9d81456-5f87-4b46-80e1-0c4d39b36ec7"
 MISSING_ID = "00000000-0000-4000-8000-000000000000"
+CONVO_ID = "6b0e3c1a-2d4f-4b8e-9a7c-5e1f3d2b4a69"
 DELETED_AT = datetime(2026, 10, 10, tzinfo=timezone.utc)
 
 QUESTION = "Do you deliver to Pune?"
@@ -91,12 +118,13 @@ SYSTEM_PROMPT = "You are Acme's sales assistant. Answer briefly."
 
 class FakeFirestore:
     """Stands in for the Firestore adapter: records by collection and id,
-    and every read made, in order."""
+    and every read and write made, in order."""
 
     def __init__(self) -> None:
-        """No records, and no reads yet."""
+        """No records, and no reads or writes yet."""
         self.records: defaultdict[str, dict[str, dict]] = defaultdict(dict)
         self.reads: list[tuple[str, str]] = []
+        self.writes: list[tuple[str, str]] = []
 
     def put(self, collection: str, record: dict) -> None:
         """Store `record` under its `_id`, replacing what is there."""
@@ -105,12 +133,23 @@ class FakeFirestore:
     async def fetchDocument(
         self, collection: str, documentId: str
     ) -> Document | None:
-        """The stored record, as the Firestore adapter hands one back -
-        after a wait, as a real read waits on the network."""
+        """A copy of the stored record, as the Firestore adapter hands one
+        back - after a wait, as a real read waits on the network."""
         self.reads.append((collection, documentId))
         await asyncio.sleep(0)
         record = self.records[collection].get(documentId)
-        return None if record is None else Document(documentId, record)
+        if record is None:
+            return None
+        return Document(documentId, copy.deepcopy(record))
+
+    async def upsertDocument(
+        self, collection: str, document: Document, *, merge: bool = False
+    ) -> None:
+        """Store a copy of `document`'s fields under its id, replacing what
+        is there - after a wait, as a real write waits on the network."""
+        self.writes.append((collection, document.id))
+        await asyncio.sleep(0)
+        self.records[collection][document.id] = copy.deepcopy(document.data)
 
 
 class RecordingModel:
@@ -160,6 +199,28 @@ class ShapedModel:
         return self.shape(
             message=self.model.answer, next=self.model.picks.pop(0)
         )
+
+
+class ScriptedNode(NodeBase):
+    """Stands in for a node of the run's own, keeping a copy of every
+    state it was run on. It counts, in the chat history itself, each key
+    its config's `count` lists - as a node changing the history in place
+    would - and returns its config's `update`."""
+
+    handler = "scripted"
+
+    def __init__(self, nodeId: str, name: str) -> None:
+        """The node, run on no state yet."""
+        super().__init__(nodeId, name)
+        self.seen: list[dict] = []
+
+    async def __call__(self, state: dict) -> dict:
+        """Keep the state, count in the history, and return the update."""
+        self.seen.append(copy.deepcopy(state))
+        chatHistory = state["chatHistory"]
+        for key in self.config.get("count", []):
+            chatHistory[key] = chatHistory.get(key, 0) + 1
+        return copy.deepcopy(self.config.get("update", {}))
 
 
 def buildChatNodeType(**overrides) -> dict:
@@ -254,6 +315,68 @@ def buildChatNode(
     return buildReplyNode(id=nodeId, name=name or nodeId, config=config)
 
 
+def buildScriptedNodeType() -> dict:
+    """A node type of `ScriptedNode`."""
+    return {
+        "_id": SCRIPTED_TYPE_ID,
+        "category": "tool",
+        "handler": ScriptedNode.handler,
+        "name": "Scripted",
+        "config": {},
+        "is_active": True,
+    }
+
+
+def buildScriptedNode(
+    nodeId: str, update: dict | None = None, count: list[str] | None = None
+) -> dict:
+    """A scripted node of id `nodeId`, counting `count` in the chat
+    history and returning `update` as it runs."""
+    return {
+        "id": nodeId,
+        "node_type_id": SCRIPTED_TYPE_ID,
+        "name": nodeId,
+        "config": {"update": update or {}, "count": count or []},
+    }
+
+
+def chatHistoryIdOf(convoId: str, agentId: str = AGENT_ID) -> str:
+    """The id of the chat history record of the conversation `convoId`."""
+    return f"{agentId}_{convoId}"
+
+
+def storedChatHistory(
+    firestore: "FakeFirestore", convoId: str, agentId: str = AGENT_ID
+) -> dict | None:
+    """The chat history record of the conversation `convoId`, in
+    Firestore."""
+    return firestore.records[AGENT_MEMORY].get(
+        chatHistoryIdOf(convoId, agentId)
+    )
+
+
+def askInConvo(
+    agentManager: AgentManager, message: str, convoId: str = CONVO_ID
+) -> Reply:
+    """The agent's reply to `message`, in the conversation `convoId`."""
+    return asyncio.run(
+        agentManager.query(PROJECT_ID, AGENT_ID, message, convoId)
+    )
+
+
+def putScriptedTemplate(firestore: "FakeFirestore", *nodes: dict) -> None:
+    """The template, running `nodes` - scripted nodes - then its reply
+    node, one after another."""
+    nodeIds = [node["id"] for node in nodes]
+    firestore.put(
+        AGENT_TEMPLATES,
+        buildTemplate(
+            nodes=[*nodes, buildReplyNode()],
+            edges=lineOf(*nodeIds, REPLY_NODE_ID),
+        ),
+    )
+
+
 def lineOf(*nodeIds: str) -> list[dict]:
     """Edges that run the nodes of `nodeIds` one after another, from the
     input node to the output node."""
@@ -339,13 +462,19 @@ async def queryAtOnce(
 ) -> list:
     """The agent queried at once under each of `projectIds`: each answer,
     or the error raised instead."""
-    return await asyncio.gather(
+    replies = await asyncio.gather(
         *(
             agentManager.query(projectId, AGENT_ID, QUESTION)
             for projectId in projectIds
         ),
         return_exceptions=True,
     )
+    return [answerOf(reply) for reply in replies]
+
+
+def answerOf(reply: Reply | BaseException) -> str | BaseException:
+    """The answer a reply gives, or the error raised instead of one."""
+    return reply if isinstance(reply, BaseException) else reply.answer
 
 
 # What a change of records does to an agent that cannot then run, and a
@@ -549,8 +678,8 @@ def runGraph(
     for nodeId, model in models.items():
         model.answer = answers[nodeId]
         model.picks = list(picks.get(nodeId, []))
-    answer = asyncio.run(agentManager.query(PROJECT_ID, AGENT_ID, QUESTION))
-    return answer, models
+    reply = asyncio.run(agentManager.query(PROJECT_ID, AGENT_ID, QUESTION))
+    return reply.answer, models
 
 
 def contentsOf(messages: list) -> list[str]:
@@ -605,6 +734,15 @@ def builtModels(monkeypatch) -> list[RecordingModel]:
 def agentManager(firestore, builtModels) -> AgentManager:
     """A manager with no agent kept, on a node manager of its own."""
     return AgentManager(NodeManager())
+
+
+@pytest.fixture
+def scriptedManager(firestore, builtModels) -> AgentManager:
+    """A manager whose node manager reserves scripted nodes too, their
+    node type in Firestore."""
+    firestore.put(NODE_TYPES, buildScriptedNodeType())
+    nodeClasses = {**NODE_CLASSES, ScriptedNode.handler: ScriptedNode}
+    return AgentManager(NodeManager(nodeClasses=nodeClasses))
 
 
 @pytest.fixture
@@ -777,7 +915,7 @@ class TestGraphs:
         classify = agent.nodes[0].chatModel.llm
         classify.picks = [OUTPUT_NODE_ID]
 
-        answer = asyncio.run(agentManager.query(PROJECT_ID, AGENT_ID, QUESTION))
+        reply = asyncio.run(agentManager.query(PROJECT_ID, AGENT_ID, QUESTION))
 
         [shape] = classify.shapes
         nextStep = shape.model_json_schema()["properties"]["next"]
@@ -786,7 +924,7 @@ class TestGraphs:
             "sales: seller - Answers sales questions.",
             f"output: {OUTPUT_ABOUT}",
         ]
-        assert answer == ANSWER
+        assert reply.answer == ANSWER
         picks = {
             (edge.source, edge.target)
             for edge in agent.graph.get_graph().edges
@@ -935,6 +1073,12 @@ class TestRecords:
         assert stats.maxRecords == 100
         assert stats.evictionPolicy == EVICTION_LRU
 
+    def testChatHistoryCachesTwoThousandLeastUsedFirst(self, memoryDb):
+        stats = memoryDb.getCollectionStats(AGENT_MEMORY)
+
+        assert stats.maxRecords == 2000
+        assert stats.evictionPolicy == EVICTION_LRU
+
     def testBuildingAgainReadsNothingFromFirestore(
         self, firestore, builtModels
     ):
@@ -1001,7 +1145,7 @@ class TestKeptAgents:
                 await agentManager.getAgent(PROJECT_ID, agentId)
             heldWhileQuerying = node in agentManager.nodeManager.reservedNodes
             builtModels[0].gate.set()
-            return node, heldWhileQuerying, await query
+            return node, heldWhileQuerying, (await query).answer
 
         node, heldWhileQuerying, answer = asyncio.run(dropWhileQuerying())
 
@@ -1031,11 +1175,11 @@ class TestKeptAgents:
             asyncio.run(agentManager.getAgent(PROJECT_ID, agentId))
         readsBefore = len(firestore.reads)
 
-        answer = asyncio.run(
+        reply = asyncio.run(
             agentManager.query(PROJECT_ID, agentIds[0], QUESTION)
         )
 
-        assert answer == ANSWER
+        assert reply.answer == ANSWER
         assert list(agentManager.agents) == agentIds[2:] + agentIds[:1]
         assert len(firestore.reads) == readsBefore
 
@@ -1050,9 +1194,9 @@ class TestQueries:
     """What a query does, alone and with others."""
 
     def testQueryIsAnsweredByTheChatModel(self, agentManager, builtModels):
-        answer = asyncio.run(agentManager.query(PROJECT_ID, AGENT_ID, QUESTION))
+        reply = asyncio.run(agentManager.query(PROJECT_ID, AGENT_ID, QUESTION))
 
-        assert answer == ANSWER
+        assert reply.answer == ANSWER
         [model] = builtModels
         [sent] = model.received
         assert [(type(message), message.content) for message in sent] == [
@@ -1106,7 +1250,7 @@ class TestQueries:
         cancelled, answered = asyncio.run(cancelOneOfTwo())
 
         assert isinstance(cancelled, asyncio.CancelledError)
-        assert answered == ANSWER
+        assert answered.answer == ANSWER
 
     def testQueryUnderAnotherProjectSharesNoLoad(self, agentManager):
         wrongProject, rightProject = asyncio.run(
@@ -1129,9 +1273,9 @@ class TestQueries:
                 return_exceptions=True,
             )
 
-        answers = asyncio.run(queryBothAtOnce())
+        replies = asyncio.run(queryBothAtOnce())
 
-        assert answers == [ANSWER, ANSWER]
+        assert [answerOf(reply) for reply in replies] == [ANSWER, ANSWER]
         [kept] = agentManager.agents.values()
         assert agentManager.nodeManager.reservedNodes == set(kept.nodes)
 
@@ -1139,6 +1283,208 @@ class TestQueries:
         asyncio.run(agentManager.query(PROJECT_ID, AGENT_ID, QUESTION))
 
         assert list(agentManager.agents) == [AGENT_ID]
+
+
+class TestConvos:
+    """Queries in conversations, each one's chat history kept for its
+    nodes - and of none; and each node's details for a run."""
+
+    def testQueryOfNoConvoKeepsNothing(self, scriptedManager, firestore):
+        putScriptedTemplate(
+            firestore,
+            buildScriptedNode("notes", {"chatHistory": {"reports": 1}}),
+        )
+
+        reply = asyncio.run(
+            scriptedManager.query(PROJECT_ID, AGENT_ID, QUESTION)
+        )
+
+        assert reply == Reply(ANSWER, None)
+        [notes, _] = scriptedManager.agents[AGENT_ID].nodes
+        assert notes.seen[0]["chatHistory"] == {}
+        assert firestore.writes == []
+
+    def testConvosFirstQueryStartsItsChatHistoryEmpty(
+        self, scriptedManager, firestore
+    ):
+        putScriptedTemplate(firestore, buildScriptedNode("notes"))
+
+        reply = askInConvo(scriptedManager, QUESTION)
+
+        assert reply == Reply(ANSWER, CONVO_ID)
+        [notes, _] = scriptedManager.agents[AGENT_ID].nodes
+        assert notes.seen[0]["chatHistory"] == {}
+        record = storedChatHistory(firestore, CONVO_ID)
+        assert {
+            key: record[key]
+            for key in ("agent_id", "project_id", "convo_id", "chat_history")
+        } == {
+            "agent_id": AGENT_ID,
+            "project_id": PROJECT_ID,
+            "convo_id": CONVO_ID,
+            "chat_history": {},
+        }
+
+    def testChatHistoryTheRunEndsWithIsSavedAndCached(
+        self, scriptedManager, firestore, memoryDb
+    ):
+        chatHistory = {"summary": "Asked about delivery to Pune."}
+        putScriptedTemplate(
+            firestore,
+            buildScriptedNode("notes", {"chatHistory": chatHistory}),
+        )
+
+        askInConvo(scriptedManager, QUESTION)
+
+        record = storedChatHistory(firestore, CONVO_ID)
+        assert record["chat_history"] == chatHistory
+        cached = memoryDb.getRecord(AGENT_MEMORY, chatHistoryIdOf(CONVO_ID))
+        assert cached["chat_history"] == chatHistory
+
+    def testConvosNextQueryReadsItsChatHistoryFromTheCache(
+        self, scriptedManager, firestore
+    ):
+        putScriptedTemplate(
+            firestore, buildScriptedNode("notes", count=["questions"])
+        )
+        askInConvo(scriptedManager, QUESTION)
+
+        askInConvo(scriptedManager, "And?")
+
+        [notes, _] = scriptedManager.agents[AGENT_ID].nodes
+        assert notes.seen[1]["chatHistory"] == {"questions": 1}
+        record = storedChatHistory(firestore, CONVO_ID)
+        assert record["chat_history"] == {"questions": 2}
+        # Read once, before the first answer, when there was none.
+        chatHistoryId = chatHistoryIdOf(CONVO_ID)
+        assert firestore.reads.count((AGENT_MEMORY, chatHistoryId)) == 1
+
+    def testChatHistoryDroppedFromTheCacheIsReadFromFirestore(
+        self, scriptedManager, firestore, memoryDb
+    ):
+        putScriptedTemplate(
+            firestore, buildScriptedNode("notes", count=["questions"])
+        )
+        askInConvo(scriptedManager, QUESTION)
+        chatHistoryId = chatHistoryIdOf(CONVO_ID)
+        memoryDb.deleteRecord(AGENT_MEMORY, chatHistoryId)
+
+        askInConvo(scriptedManager, "And?")
+
+        assert firestore.reads.count((AGENT_MEMORY, chatHistoryId)) == 2
+        record = storedChatHistory(firestore, CONVO_ID)
+        assert record["chat_history"] == {"questions": 2}
+        assert memoryDb.getRecord(AGENT_MEMORY, chatHistoryId) is not None
+
+    def testRunThatFailsSavesNothingAndLeavesTheChatHistory(
+        self, scriptedManager, firestore, memoryDb
+    ):
+        # notes counts in the history in place, then review loops past the
+        # step limit on the second query.
+        nodes = [
+            buildScriptedNode("notes", count=["questions"]),
+            buildChatNode("draft"),
+            buildChatNode("review"),
+        ]
+        edges = [
+            {"from": INPUT_NODE_ID, "to": "notes"},
+            {"from": "notes", "to": "draft"},
+            *LOOP_EDGES[1:],
+        ]
+        firestore.put(AGENT_TEMPLATES, buildTemplate(nodes=nodes, edges=edges))
+        agent = asyncio.run(scriptedManager.getAgent(PROJECT_ID, AGENT_ID))
+        review = agent.nodes[2].chatModel.llm
+        review.picks = [OUTPUT_NODE_ID]
+        askInConvo(scriptedManager, QUESTION)
+        review.picks = ["draft"] * MAX_RUN_STEPS
+
+        with pytest.raises(AgentNotRunnableError):
+            askInConvo(scriptedManager, "Again?")
+
+        chatHistoryId = chatHistoryIdOf(CONVO_ID)
+        assert firestore.writes == [(AGENT_MEMORY, chatHistoryId)]
+        cached = memoryDb.getRecord(AGENT_MEMORY, chatHistoryId)
+        assert cached["chat_history"] == {"questions": 1}
+
+    def testSaveFirestoreRefusesLeavesTheCachedChatHistory(
+        self, scriptedManager, firestore, memoryDb, monkeypatch
+    ):
+        putScriptedTemplate(
+            firestore, buildScriptedNode("notes", count=["questions"])
+        )
+        askInConvo(scriptedManager, QUESTION)
+
+        async def refuseTheWrite(*arguments, **keywords) -> None:
+            raise ConnectionError("Firestore is out of reach.")
+
+        monkeypatch.setattr(firestore, "upsertDocument", refuseTheWrite)
+
+        with pytest.raises(ConnectionError):
+            askInConvo(scriptedManager, "And?")
+
+        cached = memoryDb.getRecord(AGENT_MEMORY, chatHistoryIdOf(CONVO_ID))
+        assert cached["chat_history"] == {"questions": 1}
+
+    def testConvoIsOfOneAgentAlone(self, scriptedManager, firestore):
+        putScriptedTemplate(
+            firestore, buildScriptedNode("notes", count=["questions"])
+        )
+        askInConvo(scriptedManager, QUESTION)
+        [otherAgentId] = putAgents(firestore, 1)
+
+        asyncio.run(
+            scriptedManager.query(PROJECT_ID, otherAgentId, QUESTION, CONVO_ID)
+        )
+
+        [notes, _] = scriptedManager.agents[otherAgentId].nodes
+        assert notes.seen[0]["chatHistory"] == {}
+        for agentId in (AGENT_ID, otherAgentId):
+            record = storedChatHistory(firestore, CONVO_ID, agentId)
+            assert record["chat_history"] == {"questions": 1}
+
+    def testEachNodeKeepsItsDetailsForTheRunUnderItsId(
+        self, scriptedManager, firestore
+    ):
+        nodes = [
+            buildScriptedNode(
+                "first", {"nodeDetails": {"first": {"count": 1}}}
+            ),
+            buildScriptedNode(
+                "second", {"nodeDetails": {"first": {"seenBy": "second"}}}
+            ),
+            buildScriptedNode("third", {}),
+            buildChatNode("reply"),
+        ]
+        firestore.put(
+            AGENT_TEMPLATES,
+            buildTemplate(
+                nodes=nodes, edges=lineOf("first", "second", "third", "reply")
+            ),
+        )
+
+        for _ in range(2):
+            asyncio.run(scriptedManager.query(PROJECT_ID, AGENT_ID, QUESTION))
+
+        first, second, third, _ = scriptedManager.agents[AGENT_ID].nodes
+        assert first.seen[1]["nodeDetails"] == {}
+        assert second.seen[0]["nodeDetails"] == {"first": {"count": 1}}
+        assert third.seen[0]["nodeDetails"] == {
+            "first": {"count": 1, "seenBy": "second"}
+        }
+
+    def testNodeDetailsMergeIntoEachNodesOwn(self):
+        nodeDetails = {"first": {"count": 1}}
+
+        merged = mergeNodeDetails(
+            nodeDetails,
+            {"first": {"seenBy": "second"}, "second": {"count": 2}},
+        )
+
+        assert merged == {
+            "first": {"count": 1, "seenBy": "second"},
+            "second": {"count": 2},
+        }
+        assert nodeDetails == {"first": {"count": 1}}
 
 
 class TestService:
@@ -1150,10 +1496,26 @@ class TestService:
         )
 
         assert QueryAgentResponse(**payload) == QueryAgentResponse(
-            agentId=AGENT_ID, answer=ANSWER
+            agentId=AGENT_ID, convoId=None, answer=ANSWER
         )
         readCollections = {collection for collection, _ in firestore.reads}
         assert readCollections == {AGENTS, AGENT_TEMPLATES, NODE_TYPES}
+
+    def testConvoGoesOnThroughTheService(self, serviceManager, firestore):
+        payloads = [
+            asyncio.run(
+                service.queryAgent(PROJECT_ID, AGENT_ID, message, CONVO_ID)
+            )
+            for message in (QUESTION, "And?")
+        ]
+
+        assert [QueryAgentResponse(**payload) for payload in payloads] == [
+            QueryAgentResponse(
+                agentId=AGENT_ID, convoId=CONVO_ID, answer=ANSWER
+            )
+        ] * 2
+        chatHistoryId = chatHistoryIdOf(CONVO_ID)
+        assert firestore.writes == [(AGENT_MEMORY, chatHistoryId)] * 2
 
     @pytest.mark.parametrize(
         "agentId, agentChanges, errorKind",

@@ -1,13 +1,17 @@
 """The agents this process keeps, and the queries they answer.
 
-    answer = await getAgentManager().query(projectId, agentId, "Hi!")
+    reply = await getAgentManager().query(projectId, agentId, "Hi!")
+    reply = await getAgentManager().query(
+        projectId, agentId, "And then?", convoId
+    )
 
 `query` answers a message with the agent `agentId` of `projectId`, which
 `getAgent` hands it: the agent kept, used as it is, else one loaded -
-read from its record and built - and kept. An agent is never started or
-stopped as a step of its own: it is loaded when a query needs it and
-none is kept. It is loaded once: queries at once for an agent not kept
-all wait on the one load, rather than each loading it.
+read from its record and built - and kept; in the conversation named,
+if any. An agent is never started or stopped as a step of its own: it
+is loaded when a query needs it and none is kept. It is loaded once:
+queries at once for an agent not kept all wait on the one load, rather
+than each loading it.
 
 The manager keeps up to `maxAgents` agents - MAX_AGENTS unless it is
 built with another limit - in an LRU of its own: a query makes its agent
@@ -28,7 +32,7 @@ import functools
 import logging
 from collections import OrderedDict
 
-from agents.agent import Agent, AgentNotFoundError, loadAgent
+from agents.agent import Agent, AgentNotFoundError, Reply, loadAgent
 from agents.nodeManager import NodeManager, getNodeManager
 
 LOGGER = logging.getLogger(__name__)
@@ -106,8 +110,15 @@ class AgentManager:
             dropped.release()
             LOGGER.info("Dropped %s, the least recently used.", dropped)
 
-    async def query(self, projectId: str, agentId: str, message: str) -> str:
-        """The agent's answer to `message`; it is loaded if not kept.
+    async def query(
+        self,
+        projectId: str,
+        agentId: str,
+        message: str,
+        convoId: str | None = None,
+    ) -> Reply:
+        """The agent's answer to `message`, in the conversation `convoId`
+        if one is named, and that id; the agent is loaded if not kept.
 
         Raises:
             AgentNotFoundError: If the project has no such agent.
@@ -115,7 +126,7 @@ class AgentManager:
                 be run as it is.
         """
         agent = await self.getAgent(projectId, agentId)
-        return await agent.query(message)
+        return await agent.query(message, convoId)
 
 
 _AGENT_MANAGER: AgentManager | None = None

@@ -3,7 +3,7 @@ template wires them into, which answers its queries.
 
     agent = await loadAgent(nodeManager, projectId, agentId)
     agent.isTriggerAvailable(triggerId)
-    answer = await agent.query("Do you deliver to Pune?")
+    reply = await agent.query("Do you deliver to Pune?", convoId)
     agent.release()
 
 An `Agent` holds who it is - agentId, name, projectId and templateId,
@@ -25,11 +25,31 @@ It keeps its template's triggers too: `isTriggerAvailable` says whether
 one can start the agent - the template has it, enabled, on one of its
 nodes.
 
-`query` runs the graph on a message, and answers with what the run goes
-out with. Queries at once share the graph, and the nodes in it. The
-nodes stay reserved while the agent is kept: `release` hands them back
-to the node manager - at once, or once its last running query is
-answered - which wipes their credentials and config.
+`query` runs the graph on a message - in a conversation, if it names
+one - and answers with what the run goes out with. Queries at once share
+the graph, and the nodes in it. The nodes stay reserved while the agent
+is kept: `release` hands them back to the node manager - at once, or
+once its last running query is answered - which wipes their credentials
+and config.
+
+What nodes keep
+---------------
+
+Nodes keep two things in the run's state, each as they will:
+
+* `chatHistory` - what is remembered of the conversation, a plain dict.
+  A query names its conversation by a `convoId`, and the run comes in
+  with a copy of its chat history - empty, the first time - which nodes
+  read and change, returning `{"chatHistory": ...}` whole, or changing
+  it in place. Once the run is answered, the history it ends with is
+  saved, and `agentStore` caches it, so the next query reads it from
+  memoryDb, not Firestore; a run that fails saves nothing. A query with
+  no `convoId` - a cron agent's report, say - is of no conversation: its
+  history starts empty, and is not saved.
+* `nodeDetails` - each node's own data for the run, under its id,
+  `state["nodeDetails"][nodeId]`, which a node changes by returning
+  `{"nodeDetails": {nodeId: {key: value}}}`, merged into what is there.
+  They start empty each run, and are not saved.
 
 The template's graph
 --------------------
@@ -99,7 +119,9 @@ What cannot run is refused as it is built, with no node left reserved:
 """
 
 import asyncio
+import copy
 import logging
+from typing import Annotated, NamedTuple
 
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, MessagesState, StateGraph
@@ -139,12 +161,37 @@ class AgentNotRunnableError(RuntimeError):
     """The agent is there, but cannot be run as it is."""
 
 
+class Reply(NamedTuple):
+    """An agent's answer, and the id of the conversation it was given in,
+    if any."""
+
+    answer: str
+    convoId: str | None
+
+
+def mergeNodeDetails(
+    nodeDetails: dict[str, dict], changes: dict[str, dict]
+) -> dict[str, dict]:
+    """`nodeDetails` with the details nodes returned, each node's merged
+    into its own, by its id."""
+    merged = dict(nodeDetails)
+    for nodeId, details in changes.items():
+        merged[nodeId] = {**merged.get(nodeId, {}), **details}
+    return merged
+
+
 class AgentState(MessagesState):
     """A run's state: the message it comes in with, the conversation, and
-    the answer it goes out with."""
+    the answer it goes out with; and, for its nodes, the conversation's
+    chat history and each node's details."""
 
     inputMessage: str
     answer: str
+    # The conversation's chat history, as the nodes keep it: loaded before
+    # the run, and saved after it.
+    chatHistory: dict
+    # Each node's own details for the run, by its id; not saved.
+    nodeDetails: Annotated[dict[str, dict], mergeNodeDetails]
 
 
 def mergeConfig(base: dict, override: dict) -> dict:
@@ -382,9 +429,14 @@ class Agent:
         template has it, enabled, on one of its nodes."""
         return triggerId in self.triggerIds
 
-    async def query(self, message: str) -> str:
-        """The agent's answer to `message`: the message comes in at the
-        input node, and the answer is what goes out at the output node.
+    async def query(self, message: str, convoId: str | None = None) -> Reply:
+        """The agent's answer to `message`, in the conversation `convoId`
+        if one is named, and that id.
+
+        The run comes in with a copy of the conversation's chat history -
+        empty, the first time, or with no conversation - and once it is
+        answered, the history it ends with is saved, if a conversation is
+        named.
 
         Raises:
             AgentNotRunnableError: If the run goes on past MAX_RUN_STEPS
@@ -393,17 +445,48 @@ class Agent:
         """
         self.runningQueries += 1
         try:
-            state = await self.graph.ainvoke({"inputMessage": message})
+            chatHistory = await self._chatHistoryOf(convoId)
+            state = await self._run(message, chatHistory)
+            if convoId is not None:
+                await agentStore.saveChatHistory(
+                    self.agentId, self.projectId, convoId, state["chatHistory"]
+                )
+        finally:
+            self.runningQueries -= 1
+            if self.isReleased and self.runningQueries == 0:
+                self._returnNodes()
+        return Reply(state["answer"], convoId)
+
+    async def _run(self, message: str, chatHistory: dict) -> dict:
+        """The state a run of the graph on `message` ends with, coming in
+        with `chatHistory`.
+
+        Raises:
+            AgentNotRunnableError: If the run goes on past MAX_RUN_STEPS
+                steps without reaching the output node.
+        """
+        try:
+            return await self.graph.ainvoke(
+                {
+                    "inputMessage": message,
+                    "chatHistory": chatHistory,
+                    "nodeDetails": {},
+                }
+            )
         except GraphRecursionError as error:
             raise AgentNotRunnableError(
                 f"A run of agent {self.agentId!r} went past {MAX_RUN_STEPS} "
                 f"steps without reaching {OUTPUT_NODE_ID!r}."
             ) from error
-        finally:
-            self.runningQueries -= 1
-            if self.isReleased and self.runningQueries == 0:
-                self._returnNodes()
-        return state["answer"]
+
+    async def _chatHistoryOf(self, convoId: str | None) -> dict:
+        """A copy of the conversation's chat history, for the run's nodes
+        to change as they will - the cached one stays as it is until the
+        run is saved; empty, with no conversation, or a new one."""
+        if convoId is None:
+            return {}
+        chatHistory = await agentStore.fetchChatHistory(self.agentId, convoId)
+        return {} if chatHistory is None else copy.deepcopy(chatHistory)
 
     def release(self) -> None:
         """Let the agent go: its nodes go back to the node manager at once,

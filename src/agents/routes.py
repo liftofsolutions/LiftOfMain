@@ -6,7 +6,8 @@ no account:
     POST /agents/{projectId}/{agentId}/query   the agent's answer
 
 There is no start and no stop: a query builds the agent if it is not
-kept.
+kept. A query may name its conversation by a `convoId`, and goes on
+with it - or starts it - keeping its chat history.
 """
 
 import logging
@@ -87,7 +88,8 @@ async def queryAgent(
     agentId: str,
     agentQuery: QueryAgentRequest,
 ) -> dict | JSONResponse:
-    """The agent's answer to the message; it is built if not kept."""
+    """The agent's answer to the message, in the conversation named, if
+    any; the agent is built if not kept."""
     logRequest(
         request,
         {
@@ -96,9 +98,10 @@ async def queryAgent(
             **agentQuery.model_dump(),
         },
     )
+    convoId = agentQuery.convoId and str(agentQuery.convoId)
     try:
         answered = await service.queryAgent(
-            projectId, agentId, agentQuery.message
+            projectId, agentId, agentQuery.message, convoId
         )
     except Exception:
         LOGGER.exception("Querying agent %s failed.", agentId)

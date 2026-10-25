@@ -1,7 +1,7 @@
 # Agent schema
 
-Agents for a project: what they are made of (nodes), how those are wired (edges), what starts them (triggers), and
-the keys they use (credentials).
+Agents for a project: what they are made of (nodes), how those are wired (edges), what starts them (triggers),
+the keys they use (credentials), and what they remember of each conversation (chat history).
 MongoDB-style documents; works on Firestore today.
 
 ## Files
@@ -21,6 +21,7 @@ MongoDB-style documents; works on Firestore today.
 | `agent_templates` | Platform, or one project | An agent's structure: embedded `nodes[]`, `edges[]` and `triggers[]`; `rag_enabled`, with the `rag_id` of its knowledge base |
 | `agents` | One project | The running agent: which template, name, status |
 | `credentials` | One project | Keys and account details a node uses; secrets encrypted |
+| `agent_memory` | One agent | A conversation's chat history: whatever the agent's nodes keep of it, as a plain object |
 
 Embedded inside `agent_templates`:
 
@@ -38,6 +39,7 @@ projects     0..1 ── 0..N  node_types          (missing project_id = platfor
 projects        1 ── 0..N  credentials
 rags         0..1 ── 0..N  agent_templates     (rag_id, set when rag_enabled; Knowledge schema)
 agent_templates 1 ── 0..N  agents
+agents          1 ── 0..N  agent_memory        (one per conversation)
 agent_templates 1 ── N     nodes      (embedded)
 agent_templates 1 ── 1..N  edges      (embedded)
 agent_templates 1 ── 0..N  triggers   (embedded)
@@ -128,6 +130,26 @@ with their merged config, compiles them into a LangGraph graph, and keeps it for
 agent must belong to `projectId`, be `active` and not deleted, and its template must build; nothing else is
 checked.
 
+**Conversations.** A query may name its conversation by a `convoId`, a UUID the caller picks; the first query
+with one starts the conversation. What is remembered of it is up to the agent's nodes: the run's state holds its
+`chatHistory`, a plain object - empty, the first time - which nodes read and change as they will. The backend loads
+it before the run and saves what the run ends with, once it is answered, to `agent_memory` and to memoryDb, so the
+next query reads it from memoryDb rather than Firestore. A run that fails saves nothing. A query with no
+`convoId` - a cron agent's report, say - is of no conversation: its history starts empty and is not saved. Each
+node also has its own details for the run, `nodeDetails[nodeId]`, which start empty each run and are not saved.
+
+```json
+{
+  "agent_id": "88f95300-7453-4609-b685-2c424cc181d5",
+  "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
+  "convo_id": "6b0e3c1a-2d4f-4b8e-9a7c-5e1f3d2b4a69",
+  "chat_history": {"...": "whatever the nodes keep"},
+  "updated_at": "2026-10-25T09:00:04Z"
+}
+```
+
+An `agent_memory` document's id is `{agent_id}_{convo_id}`, so a conversation is one agent's alone.
+
 **Inbound webhook.** Each trigger has its own URL:
 
 ```
@@ -152,7 +174,7 @@ KMS key. Only the backend decrypts them, at the moment a node needs them. They a
 
 ## Left to later modules
 
-- **Runs and conversations**: run history, messages, which node used how many credits.
+- **Runs**: run history, and which node used how many credits.
   A template `version` field can be added then if runs need to record which version produced a reply.
 - **Loop counters**: how many times a node may run in one run, kept in the node's config.
 - **Knowledge (RAG)**: how an agent searches the rag its template's `rag_id` names once `rag_enabled` is on.

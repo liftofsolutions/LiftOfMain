@@ -1,4 +1,5 @@
-// Agent schema: agent_templates (with embedded nodes, edges and triggers), node_types, agents, credentials.
+// Agent schema: agent_templates (with embedded nodes, edges and triggers), node_types, agents, credentials,
+// agent_memory.
 // Connected to the Project schema through project_id, and to the User schema through created_by.
 // Keys: PK = primary key, FK = foreign key, UNIQUE = no two values share it in the stated scope.
 //
@@ -159,6 +160,19 @@ export interface Credential {
   expires_at?: Date;              // for tokens that expire (OAuth)
   created_by: string;             // FK → users._id
   created_at: Date;
+  updated_at: Date;
+}
+
+// ---------- agent_memory ----------
+
+// A conversation's chat history: whatever the agent's nodes keep of it.
+// The document id is `${agent_id}_${convo_id}`, so a conversation is one
+// agent's alone.
+export interface AgentMemory {
+  agent_id: string;       // FK → agents._id
+  project_id: string;     // FK → projects._id
+  convo_id: string;       // UUID: the conversation's id, the caller's pick
+  chat_history: Record<string, unknown>; // the nodes' own, in any shape
   updated_at: Date;
 }
 
