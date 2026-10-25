@@ -26,27 +26,56 @@ config picks:
   settings from `configLLM.json`. OpenAI's gpt-5 models take only their
   default temperature, so LangChain drops any other.
 
+* `rag_search` - optional; true lets the model search the agent's
+  knowledge base, the rag its template names, which the agent hands the
+  node as it reserves it, in `rag`: `{"project_id", "rag_id"}`.
+* `pick_limits` - optional, for a node with several edges out: the most
+  times a run's model picks each node, by id. `{"<draft>": 3}` sends a
+  run back to draft three times at most.
+
 Nothing else in the config reaches the model's settings: a `base_url`,
 say, would send the platform's key somewhere else. A call sends the
-system prompt, then every message in the state, and adds the model's
-answer to `messages`.
+system prompt, then the conversation's chat history - its summary after
+the prompt, its messages next, as `chatHistoryNode` keeps them - then
+every message in the state; it adds the model's answer to `messages`,
+and keeps it as the run's `answer`, until a node answers after it.
+
+A node with `rag` binds RAG_TOOL: the model may search the rag, a query
+at a time, and answers from what it found. Each search, and its result,
+is added to `messages` before the answer, so the nodes after it read
+what the answer was made of. A model still searching after MAX_SEARCHES
+rounds is asked to answer with what it has.
 
 `choose` sends the same, for a node with several edges out, and has the
 model answer as structured output, in the shape `nextStepOf` gives: its
 answer, and the id of the node the conversation goes on to, out of the
 choices it is given - so it can pick none but those. A graph runs such a
-node as a `ChoosingNode`, which adds the answer to `messages` and sends
-the run on to the node picked.
+node as a `ChoosingNode`, which adds the answer to `messages` - not as
+the run's answer: a picking node steers the run, as a reviewer saying
+what to change does - and sends the run on to the node picked. It counts
+its picks in its `nodeDetails`, `{"picks": {nodeId: count}}`, and offers
+its model no node it has picked as often as its `pick_limits` say; with
+one node left to pick, the model is not asked, and the run goes on
+there - a reviewer that has sent a reply back as often as it may passes
+the next one unread.
 """
 
+import math
 from typing import ClassVar, Literal
 
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.types import Command
 from pydantic import BaseModel, Field, create_model
 
+from agents.nodes.chatHistoryNode import historyMessagesOf, summaryOf
 from agents.nodes.credential import Credential
 from agents.nodes.nodeBase import NodeBase
+from documentProcessing.service import searchRag
 from LLM import ChatModel, buildChatModel
 
 # The role whose system prompt is used when a node's config has none.
@@ -60,6 +89,39 @@ CONFIG_SETTINGS = ("temperature", "max_tokens")
 # parts of its answer.
 MESSAGE_ABOUT = "Your answer, added to the conversation."
 NEXT_ABOUT = "Where the conversation goes next: the id of one of these."
+
+# What a model reads of the summary of the conversation before its
+# messages, after its system prompt.
+SUMMARY_ABOUT = "The conversation before the messages below, summarised:"
+
+# The config key of the most times a node picks each node it may.
+PICK_LIMITS = "pick_limits"
+
+# The tool a node with a rag searches it with, in LangChain's tool
+# format; and the rounds of searches a model may make before it answers.
+RAG_TOOL_NAME = "search_knowledge_base"
+RAG_TOOL = {
+    "type": "function",
+    "function": {
+        "name": RAG_TOOL_NAME,
+        "description": (
+            "Search the knowledge base: the parts of its documents that "
+            "best answer the query."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to look for, in a few words.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+MAX_SEARCHES = 3
+NOTHING_FOUND = "Nothing in the knowledge base answers it."
 
 
 def nextStepOf(choices: dict[str, str]) -> type[BaseModel]:
@@ -119,9 +181,49 @@ class ChatModelNode(NodeBase):
         super().deconfigure()
 
     async def __call__(self, state: dict) -> dict:
-        """Add the model's answer to the conversation in `messages`."""
-        answer = await self.chatModel.llm.ainvoke(self._messagesFor(state))
-        return {"messages": [answer]}
+        """Add the model's answer to the conversation in `messages` - its
+        searches before it, if it has a rag - and keep it as the run's
+        answer."""
+        messages = self._messagesFor(state)
+        if self.config.get("rag"):
+            added = await self._answerWithSearches(messages)
+        else:
+            added = [await self.chatModel.llm.ainvoke(messages)]
+        return {"messages": added, "answer": added[-1].text}
+
+    async def _answerWithSearches(
+        self, messages: list[BaseMessage]
+    ) -> list[BaseMessage]:
+        """The model's searches of the rag, each with what it found, then
+        its answer: the messages it adds to `messages`."""
+        added: list[BaseMessage] = []
+        searcher = self.chatModel.llm.bind_tools([RAG_TOOL])
+        for _ in range(MAX_SEARCHES):
+            answer = await searcher.ainvoke([*messages, *added])
+            added.append(answer)
+            if not answer.tool_calls:
+                return added
+            for toolCall in answer.tool_calls:
+                found = await self._search(toolCall)
+                added.append(ToolMessage(found, tool_call_id=toolCall["id"]))
+        answerer = self.chatModel.llm.bind_tools(
+            [RAG_TOOL], tool_choice="none"
+        )
+        added.append(await answerer.ainvoke([*messages, *added]))
+        return added
+
+    async def _search(self, toolCall: dict) -> str:
+        """What the rag holds for the query of `toolCall`, as the model
+        reads it: the text of each part found, closest first."""
+        query = toolCall["args"].get("query")
+        if toolCall["name"] != RAG_TOOL_NAME or not isinstance(query, str):
+            return f"No search but {RAG_TOOL_NAME}, given a query."
+        rag = self.config["rag"]
+        found = await searchRag(rag["project_id"], rag["rag_id"], query)
+        if "error" in found:
+            return found["error"]
+        texts = [match["text"] for match in found["matches"]]
+        return "\n\n".join(texts) or NOTHING_FOUND
 
     async def choose(
         self, state: dict, choices: dict[str, str]
@@ -137,13 +239,22 @@ class ChatModelNode(NodeBase):
         ).ainvoke(self._messagesFor(state))
         return AIMessage(nextStep.message), nextStep.next
 
-    def _messagesFor(self, state: dict) -> list:
-        """What the model is sent: the system prompt, then every message in
+    def _messagesFor(self, state: dict) -> list[BaseMessage]:
+        """What the model is sent: the system prompt, the summary of the
+        conversation's chat history, its messages, then every message in
         `state`."""
+        chatHistory = state.get("chatHistory", {})
         systemPrompt = (
             self.config.get("system_prompt") or self.chatModel.systemPrompt
         )
-        return [SystemMessage(systemPrompt), *state["messages"]]
+        summary = summaryOf(chatHistory)
+        if summary:
+            systemPrompt = f"{systemPrompt}\n\n{SUMMARY_ABOUT}\n{summary}"
+        return [
+            SystemMessage(systemPrompt),
+            *historyMessagesOf(chatHistory),
+            *state["messages"],
+        ]
 
 
 class OpenAIChatNode(ChatModelNode):
@@ -180,7 +291,8 @@ class XAIChatNode(ChatModelNode):
 
 class ChoosingNode:
     """A chat model node with several edges out, run so that it picks
-    which of the nodes they lead to the run goes on to.
+    which of the nodes they lead to the run goes on to - each as often as
+    its `pick_limits` let it.
 
         graph.add_node(
             node.nodeId,
@@ -197,7 +309,23 @@ class ChoosingNode:
         self.choices = choices
 
     async def __call__(self, state: dict) -> Command:
-        """The node's answer added to the conversation, and the run sent on
-        to the node it picked."""
-        answer, nextNodeId = await self.node.choose(state, self.choices)
-        return Command(goto=nextNodeId, update={"messages": [answer]})
+        """The node's answer added to the conversation, the pick counted,
+        and the run sent on to the node it picked: one of those it has
+        picked fewer times than its limits say. With one of them left,
+        the node is not asked: the run goes on there."""
+        picks = state["nodeDetails"].get(self.nodeId, {}).get("picks", {})
+        limits = self.node.config.get(PICK_LIMITS, {})
+        choices = {
+            choiceId: about
+            for choiceId, about in self.choices.items()
+            if picks.get(choiceId, 0) < limits.get(choiceId, math.inf)
+        }
+        update = {}
+        if len(choices) == 1:
+            [nextNodeId] = choices
+        else:
+            answer, nextNodeId = await self.node.choose(state, choices)
+            update["messages"] = [answer]
+        picks = {**picks, nextNodeId: picks.get(nextNodeId, 0) + 1}
+        update["nodeDetails"] = {self.nodeId: {"picks": picks}}
+        return Command(goto=nextNodeId, update=update)

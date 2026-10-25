@@ -17,7 +17,9 @@ from. `build` readies it to run, once:
    is merged over.
 3. It reserves those nodes from the node manager, each configured as it
    will run. A chat model takes no credential: it runs on the platform's
-   key, which the node manager's chat model nodes hold.
+   key, which the node manager's chat model nodes hold. A node whose
+   config has `rag_search` is handed the template's rag, in `rag`, to
+   search: its knowledge base, `rag_id`.
 4. It builds the LangGraph graph of them, wired as the template says,
    and keeps it compiled, in `graph`.
 
@@ -49,7 +51,12 @@ Nodes keep two things in the run's state, each as they will:
 * `nodeDetails` - each node's own data for the run, under its id,
   `state["nodeDetails"][nodeId]`, which a node changes by returning
   `{"nodeDetails": {nodeId: {key: value}}}`, merged into what is there.
-  They start empty each run, and are not saved.
+  They start empty each run, and are not saved. A node picking where
+  the run goes next counts its picks there, `{"picks": {nodeId: n}}`.
+
+A `chat_history` node keeps the conversation in `chatHistory`, in the
+shape every chat model node reads - its summary, and its messages - and
+summarises it once it grows long: see `agents.nodes.chatHistoryNode`.
 
 The template's graph
 --------------------
@@ -73,7 +80,9 @@ Two nodes are in every graph, the special nodes of
 edges name them by their ids, "input" and "output". A run comes in at
 the input node, which starts the conversation with the message the run
 was given - by a trigger, or a query - and goes out at the output node,
-which takes the last message of the conversation as the answer.
+with the run's answer: the last reply of a node that answers, not of
+one that picks - a reviewer passing a reply is not the one heard - or,
+in a run where none answered, its last message.
 
 A run goes on one node at a time. A node with one edge out goes on to
 the node it leads to; a node with several picks one of the nodes they
@@ -82,8 +91,10 @@ output, in a fixed shape: its
 answer, and the id of the node it picks, which can be none but theirs.
 It reads each of them by its name and what it does - its config's
 `description` - and the output node as the end of the run, its own
-answer going out as the agent's. So an if-else is a node with an edge
-each way, and a loop an edge back:
+answer going out as the agent's. A node's `pick_limits` cap how often
+it picks each node in a run, as its config says, counting its picks in
+its `nodeDetails`. So an if-else is a node with an edge each way, and a
+loop an edge back, capped or not:
 
     "edges": [
         {"from": "input", "to": "<draft>"},
@@ -92,7 +103,9 @@ each way, and a loop an edge back:
         {"from": "<review>", "to": "output"}
     ]
 
-        review picks: draft, to write it again, or output.
+        review picks: draft, to write it again, or output - output
+        alone, once it has picked draft as often as
+        `"pick_limits": {"<draft>": 3}` lets it.
 
 A graph has one edge from "input", where no model picks, and one edge
 or more to "output"; nothing leads to "input" and nothing leaves
@@ -115,7 +128,10 @@ What cannot run is refused as it is built, with no node left reserved:
   runs has a type that is missing, inactive or another project's, or
   cannot be reserved - a handler no node class runs, as no io or tool
   node does yet, a name that is not a slug, a model `configLLM.json`
-  does not list.
+  does not list; a node searches a rag the template has none of; or a
+  node has several edges out but cannot pick - it is no chat model node,
+  or it searches a rag - or its pick limits are not counts, name a node
+  it has no edge to, or limit every node it goes on to.
 """
 
 import asyncio
@@ -134,11 +150,13 @@ from agents.nodes import (
     OUTPUT_ABOUT,
     OUTPUT_NODE_ID,
     SPECIAL_NODE_IDS,
+    ChatModelNode,
     ChoosingNode,
     InputNode,
     NodeBase,
     OutputNode,
 )
+from agents.nodes.chatModelNode import PICK_LIMITS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -186,6 +204,8 @@ class AgentState(MessagesState):
     chat history and each node's details."""
 
     inputMessage: str
+    # The last reply of a node that answers; once the run goes out, its
+    # answer.
     answer: str
     # The conversation's chat history, as the nodes keep it: loaded before
     # the run, and saved after it.
@@ -326,6 +346,51 @@ def aboutOf(node: NodeBase) -> str:
     return f"{about['name']} - {about['description']}"
 
 
+def checkPicks(node: NodeBase, targets: list[str]) -> None:
+    """Refuse a node of `targets` - the ids of the nodes its edges lead to
+    - that cannot pick one as it says.
+
+    Raises:
+        AgentNotRunnableError: If its pick limits are not counts of 1 or
+            more, by node id, name a node it has no edge to, or limit
+            every node it goes on to, so a run could find no way on; or
+            it has several edges out but is no chat model node, which
+            picks, or it searches a rag, which a node that picks does
+            not.
+    """
+    name = node.name
+    limits = node.config.get(PICK_LIMITS, {})
+    if not isinstance(limits, dict) or not all(
+        isinstance(limit, int) and not isinstance(limit, bool) and limit > 0
+        for limit in limits.values()
+    ):
+        raise AgentNotRunnableError(
+            f"Node {name!r} has pick limits that are not counts of 1 or "
+            "more, by node id."
+        )
+    for nodeId in limits:
+        if nodeId not in targets:
+            raise AgentNotRunnableError(
+                f"Node {name!r} limits its picks of {nodeId!r}, to which it "
+                "has no edge."
+            )
+    if limits and set(targets) <= set(limits):
+        raise AgentNotRunnableError(
+            f"Node {name!r} limits its picks of every node it goes on to; "
+            "one needs none, so a run always has a way on."
+        )
+    if len(targets) > 1 and not isinstance(node, ChatModelNode):
+        raise AgentNotRunnableError(
+            f"Node {name!r} has several edges out, but no model to pick "
+            "one with."
+        )
+    if len(targets) > 1 and node.config.get("rag"):
+        raise AgentNotRunnableError(
+            f"Node {name!r} has several edges out, so it picks where a run "
+            "goes, and a node that picks does not search a rag."
+        )
+
+
 def buildGraph(
     nodes: list[NodeBase], nextNodeIds: dict[str, list[str]]
 ) -> CompiledStateGraph:
@@ -333,7 +398,13 @@ def buildGraph(
     the input node and the output node: each goes on to the node its one
     edge leads to, or picks one of several - by `nextNodeIds`, as
     `parseGraph` checked them - and no run goes past MAX_RUN_STEPS
-    steps."""
+    steps.
+
+    Raises:
+        AgentNotRunnableError: If a node cannot pick as `checkPicks` says.
+    """
+    for node in nodes:
+        checkPicks(node, nextNodeIds[node.nodeId])
     aboutById = {node.nodeId: aboutOf(node) for node in nodes}
     aboutById[OUTPUT_NODE_ID] = OUTPUT_ABOUT
     graph = StateGraph(AgentState)
@@ -414,9 +485,15 @@ class Agent:
         typedNodes = list(zip(graphNodes, nodeTypes, strict=True))
         for node, nodeType in typedNodes:
             self._checkNodeType(node, nodeType)
+        configs = [
+            self._configOf(node, nodeType, template)
+            for node, nodeType in typedNodes
+        ]
         try:
-            for node, nodeType in typedNodes:
-                self.nodes.append(self._reserve(node, nodeType))
+            for (node, nodeType), config in zip(
+                typedNodes, configs, strict=True
+            ):
+                self.nodes.append(self._reserve(node, nodeType, config))
             self.graph = buildGraph(self.nodes, nextNodeIds)
         except Exception:
             self._returnNodes()
@@ -541,19 +618,38 @@ class Agent:
                 f"Node {name!r} has an inactive node type."
             )
 
-    def _reserve(self, node: dict, nodeType: dict) -> NodeBase:
-        """The node, reserved from the node manager, its config merged
-        over its type's; a chat model takes no credential."""
+    def _configOf(self, node: dict, nodeType: dict, template: dict) -> dict:
+        """The config the node runs with: its own, merged over its type's;
+        and, if it has `rag_search`, the template's rag, in `rag`, as no
+        config but the agent's names it.
+
+        Raises:
+            AgentNotRunnableError: If the node searches a rag, and the
+                template has none.
+        """
+        config = mergeConfig(nodeType.get("config", {}), node.get("config", {}))
+        config.pop("rag", None)
+        if config.get("rag_search"):
+            ragId = template.get("rag_id")
+            if not template.get("rag_enabled") or not ragId:
+                raise AgentNotRunnableError(
+                    f"Node {node['name']!r} searches a rag, and template "
+                    f"{self.templateId!r} has none."
+                )
+            config["rag"] = {"project_id": self.projectId, "rag_id": ragId}
+        return config
+
+    def _reserve(self, node: dict, nodeType: dict, config: dict) -> NodeBase:
+        """The node, reserved from the node manager with `config`; a chat
+        model takes no credential."""
         try:
             return self.nodeManager.reserveNode(
                 nodeType["handler"],
                 nodeId=node["id"],
                 name=node["name"],
-                config=mergeConfig(
-                    nodeType.get("config", {}), node.get("config", {})
-                ),
+                config=config,
             )
-        except (NodeManagerError, KeyError) as error:
+        except (NodeManagerError, KeyError, ValueError) as error:
             raise AgentNotRunnableError(
                 f"Node {node['name']!r} of agent {self.agentId!r} cannot be "
                 f"reserved: {error}"

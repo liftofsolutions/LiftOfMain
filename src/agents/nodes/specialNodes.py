@@ -11,8 +11,12 @@ model.
 
 * `InputNode` starts the conversation in `messages` with the message the
   run was given - by a trigger, or a query - the state's `inputMessage`.
-* `OutputNode` takes the last message of the conversation as the run's
-  `answer`.
+* `OutputNode` takes the run's `answer`, as `answerOf` gives it: the
+  last reply of a node that answers - a chat model node's, as it keeps
+  it in the state's `answer` - so a node that only picks where the run
+  goes next, a reviewer passing a reply, is not the one heard. A run in
+  which none answered goes out with the last message: a guard turning a
+  message away, say.
 
 A node picking where a run goes next reads the output node as
 OUTPUT_ABOUT: the end of the run, its own answer going out as the
@@ -42,12 +46,17 @@ class InputNode:
         return {"messages": [HumanMessage(state["inputMessage"])]}
 
 
+def answerOf(state: dict) -> str:
+    """The run's answer: the last reply of a node that answers, else the
+    last message's text."""
+    return state.get("answer") or state["messages"][-1].text
+
+
 class OutputNode:
-    """Where a run goes out: the last message of the conversation is the
-    answer."""
+    """Where a run goes out, with its answer."""
 
     nodeId = OUTPUT_NODE_ID
 
     async def __call__(self, state: dict) -> dict:
-        """The answer: the last message's text."""
-        return {"answer": state["messages"][-1].text}
+        """The answer, as `answerOf` gives it."""
+        return {"answer": answerOf(state)}

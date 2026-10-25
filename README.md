@@ -128,7 +128,9 @@ is up to its nodes: they keep its chat history, a plain JSON object,
 saved after every answer in `agent_memory` and cached in memory, so the
 next message reads it without going to Firestore. A message with no
 `convoId` - a cron agent's, say - is of no conversation, and nothing of
-it is kept.
+it is kept. A `chat_history` node keeps the turns, and summarises them
+once they pass 10000 tokens; a chat model node with `rag_search` searches
+the template's rag as it answers.
 
 ```json
 {"message": "How long does it take?", "convoId": "6b0e3c1a-..."}

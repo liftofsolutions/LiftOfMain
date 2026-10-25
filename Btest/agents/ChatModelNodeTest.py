@@ -262,12 +262,14 @@ class TestModelSettings:
 class TestCall:
     """What one call sends the model, and what it adds to the state."""
 
-    def testAnswerIsAddedToTheMessages(self, builtModels):
+    def testAnswerIsAddedToTheMessagesAndKeptAsTheRunsAnswer(
+        self, builtModels
+    ):
         node = reserveReply(NodeManager())
 
         update = asyncio.run(node(buildState()))
 
-        assert update == {"messages": [AIMessage(ANSWER)]}
+        assert update == {"messages": [AIMessage(ANSWER)], "answer": ANSWER}
 
     def testSystemPromptThenTheConversationAreSent(self, builtModels):
         node = reserveReply(NodeManager())

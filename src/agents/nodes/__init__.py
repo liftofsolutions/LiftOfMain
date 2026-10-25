@@ -4,6 +4,10 @@ an agent builds itself, never reserved: the special nodes every graph
 has, `InputNode` and `OutputNode`, and the `ChoosingNode` a chat model
 node with several edges out runs as.
 
+The reservable ones: a chat model node per provider, and the
+`ChatHistoryNode`, which keeps a conversation's turns, summarised once
+they grow long.
+
     from agents.nodes import NODE_CLASSES, Credential, NodeBase
 
     nodeClass = NODE_CLASSES["openai_chat"]  # OpenAIChatNode
@@ -19,6 +23,7 @@ code. Which node types exist, and their default configs, is data:
 off without a deploy.
 """
 
+from agents.nodes.chatHistoryNode import ChatHistoryNode
 from agents.nodes.chatModelNode import (
     ChatModelNode,
     ChoosingNode,
@@ -36,6 +41,7 @@ from agents.nodes.specialNodes import (
     SPECIAL_NODE_IDS,
     InputNode,
     OutputNode,
+    answerOf,
 )
 
 # Every kind of node that can be reserved, by its handler.
@@ -46,6 +52,7 @@ NODE_CLASSES: dict[str, type[NodeBase]] = {
         GeminiChatNode,
         DeepSeekChatNode,
         XAIChatNode,
+        ChatHistoryNode,
     )
 }
 
@@ -55,6 +62,7 @@ __all__ = [
     "OUTPUT_ABOUT",
     "OUTPUT_NODE_ID",
     "SPECIAL_NODE_IDS",
+    "ChatHistoryNode",
     "ChatModelNode",
     "ChoosingNode",
     "Credential",
@@ -65,4 +73,5 @@ __all__ = [
     "OpenAIChatNode",
     "OutputNode",
     "XAIChatNode",
+    "answerOf",
 ]

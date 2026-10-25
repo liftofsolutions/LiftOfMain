@@ -23,7 +23,7 @@ const nodeTypesValidator = {
     properties: {
       _id: uuid,
       project_id: uuid, // FK → projects._id. Missing = platform node type
-      category: { enum: ["chat_model", "tool", "io"] },
+      category: { enum: ["chat_model", "tool", "io", "memory"] },
       handler: { bsonType: "string", minLength: 1 }, // backend integration key, e.g. "whatsapp"
       name: { bsonType: "string", minLength: 1, maxLength: 80 },
       config: { bsonType: "object" }, // default config

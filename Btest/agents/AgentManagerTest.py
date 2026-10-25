@@ -941,7 +941,8 @@ class TestGraphs:
             picks={"review": ["draft", "draft", OUTPUT_NODE_ID]},
         )
 
-        assert answer == "A review."
+        # The draft's, as the review only picks.
+        assert answer == "A draft."
         assert len(models["review"].received) == 3
         assert len(models["draft"].received) == 3
         lastDraftSent = models["draft"].received[-1]

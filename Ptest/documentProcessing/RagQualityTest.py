@@ -397,6 +397,31 @@ def followStatus(
     pytest.fail(f"Job {jobId} was still {seen} after {INDEXING_SECONDS}s.")
 
 
+def indexDocuments(
+    client: httpx.Client, server: Server, base: str, job: dict, link: str
+) -> dict:
+    """Submit `link` to the job, follow it until it ends, and return its
+    rag, ready and searched in Pinecone, as the project's list shows it.
+    """
+    submitted = client.post(
+        f"{base}/jobs/{job['jobId']}/submit", json={"documentLink": link}
+    )
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["status"] == JOB_STATUS_SUBMITTED
+    checkLog(server, "submit")
+
+    status = followStatus(client, base, job["jobId"], server)
+    assert status == JOB_STATUS_DONE, (
+        f"The job {status}:\n" + "\n".join(server.errors)
+    )
+    rag = ragSummaryOf(client, base, job["ragId"])
+    assert rag["status"] == RAG_STATUS_READY, rag
+    assert rag["strategy"] == STRATEGY_SIMPLE_RAG, rag
+    print(f"   {rag['tokenCount']} tokens in {rag['chunkCount']} chunks")
+    checkLog(server, "indexing")
+    return rag
+
+
 def ragSummaryOf(client: httpx.Client, base: str, ragId: str) -> dict:
     """The rag as the project's list of rags shows it."""
     response = client.get(f"{base}/rags")
@@ -713,24 +738,7 @@ class TestRagQuality:
         print(f"\nJob {job['jobId']}, rag {job['ragId']}")
         try:
             checkLog(server, "create job")
-            submitted = client.post(
-                f"{base}/jobs/{job['jobId']}/submit",
-                json={"documentLink": documentLink},
-            )
-            assert submitted.status_code == 200, submitted.text
-            assert submitted.json()["status"] == JOB_STATUS_SUBMITTED
-            checkLog(server, "submit")
-
-            status = followStatus(client, base, job["jobId"], server)
-            assert status == JOB_STATUS_DONE, (
-                f"The job {status}:\n" + "\n".join(server.errors)
-            )
-            rag = ragSummaryOf(client, base, job["ragId"])
-            assert rag["status"] == RAG_STATUS_READY, rag
-            assert rag["strategy"] == STRATEGY_SIMPLE_RAG, rag
-            print(f"   {rag['tokenCount']} tokens in {rag['chunkCount']} "
-                  "chunks")
-            checkLog(server, "indexing")
+            rag = indexDocuments(client, server, base, job, documentLink)
 
             questions = questionsOf(QUESTIONS_PATH)
             waitUntilSearchable(

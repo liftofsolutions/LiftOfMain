@@ -56,13 +56,15 @@ nodes           1 ── 0..N  triggers
 | `chat_model` | `anthropic_chat`, `openai_chat`, `gemini_chat` | The model; `config` holds model, temperature, `system_prompt` |
 | `tool` | `tavily_search`, `http_api` | Called by the model while processing |
 | `io` | `whatsapp`, `email`, `line`, `cron` | Receives events (via triggers) and sends messages |
+| `memory` | `chat_history` | Keeps the conversation's chat history, summarised once it grows long |
 
 `handler` is the key into the backend's integration code. A project's own node type is a preset on an existing
 handler, e.g. "Acme CRM lookup" = `handler: "http_api"` with the URL in its default `config`.
 
-Only the nodes a template's edges name run in the agent's graph, and today those are chat models: `openai_chat`,
-`gemini_chat`, `deepseek_chat` and `xai_chat` have node classes. `io` nodes stay out of the edges, as they receive
-events and send messages on their own channels. Tool nodes join a graph once they can run.
+Only the nodes a template's edges name run in the agent's graph, and today those are chat models -
+`openai_chat`, `gemini_chat`, `deepseek_chat` and `xai_chat` have node classes - and `chat_history`. `io` nodes
+stay out of the edges, as they receive events and send messages on their own channels. Tool nodes join a graph
+once they can run; a chat model searches the knowledge base itself, with `rag_search`.
 
 ## Rules (checked by the backend before saving)
 
@@ -79,10 +81,13 @@ Clients never write these collections directly; all writes go through the backen
    one edge from `input` and one or more to `output`; nothing leads to `input` or leaves `output`, and every
    other node has an edge out.
 7. A template with `rag_enabled` names its knowledge base in `rag_id`: a rag of the template's project, from
-   the Knowledge schema.
+   the Knowledge schema. Only a template with one has nodes with `rag_search`.
+8. A node with several edges out is a chat model, which picks, and does not search: no `rag_search`. A node's
+   `pick_limits` are counts of 1 or more, by the id of a node it has an edge to, and leave one of those
+   unlimited, so a run always has a way on.
 
-`validateTemplate()` in `agents.types.ts` implements rules 1–3, 5 and 6. The backend checks rules 5 and 6 again
-as it builds an agent, and refuses one that breaks them. `agents.mongo.js` holds rule 7's part a validator can:
+`validateTemplate()` in `agents.types.ts` implements rules 1–3 and 5–8. The backend checks rules 5–8 again as it
+builds an agent, and refuses one that breaks them. `agents.mongo.js` holds rule 7's part a validator can:
 `rag_id` is required when `rag_enabled` is true.
 
 ## Runtime
@@ -97,8 +102,10 @@ leads from one node to one node: `{"from": "<draft>", "to": "<review>"}` runs `r
 
 Two nodes are in every graph, built by the backend rather than stored, and edges name them by their ids: a run
 comes in at `input`, which starts the conversation with the message a trigger or a query brought, and goes out
-at `output`, which takes the last message as the agent's answer. Each node between reads the whole conversation
-so far and adds its answer.
+at `output` with the agent's answer: the last reply of a node that answers - a chat model with one edge out -
+not of one that picks, so a reviewer passing a reply is not the one heard. A run in which none answered, a guard
+turning a message away, goes out with its last message. Each node between reads the whole conversation so far
+and adds its answer.
 
 A run goes on one node at a time. A node with one edge out goes on to the node it leads to; a node with several
 picks one of the nodes they lead to. Its model answers as structured output: its answer, and the id of the node
@@ -115,7 +122,30 @@ each way, and a loop an edge back; here `review` picks `draft`, to write it agai
 ]
 ```
 
+A node's `pick_limits` cap how often it picks each node in a run: `"pick_limits": {"<draft>": 3}` lets `review`
+send a run back to `draft` three times. It counts its picks in its `nodeDetails`, `{"picks": {"<draft>": 2}}`,
+offers its model only the nodes it may still pick, and with one left, sends the run there without asking.
+
 A run of more than 25 steps, a node run each, is refused: the bound on a loop whose node never picks the way out.
+
+A customer support agent, its message from a web page coming in as it is:
+
+```json
+"edges": [
+  {"from": "input", "to": "<guard>"},
+  {"from": "<guard>", "to": "<support>"},
+  {"from": "<guard>", "to": "output"},
+  {"from": "<support>", "to": "<review>"},
+  {"from": "<review>", "to": "<support>"},
+  {"from": "<review>", "to": "<history>"},
+  {"from": "<history>", "to": "output"}
+]
+```
+
+`guard` turns a message away, going out with its reply, or passes it to `support`, which searches the knowledge
+base (`rag_search`) and answers. `review`, with `"pick_limits": {"<support>": 3}`, passes the reply or sends it
+back with what to change, three times at most; `history` keeps the turn, and the answer going out is `support`'s.
+`Btest/agents/CustomerSupportAgentTest.py` runs it.
 
 `agents.example.json` has a fuller graph: `classify` picks `facts` for a sales question, `apology` for a complaint
 or `handoff` for anything else; a sale goes on through `draft` and `review`, which picks `draft` again or `reply`.
@@ -137,6 +167,23 @@ it before the run and saves what the run ends with, once it is answered, to `age
 next query reads it from memoryDb rather than Firestore. A run that fails saves nothing. A query with no
 `convoId` - a cron agent's report, say - is of no conversation: its history starts empty and is not saved. Each
 node also has its own details for the run, `nodeDetails[nodeId]`, which start empty each run and are not saved.
+
+A `chat_history` node keeps the conversation in this shape, which every chat model reads - the summary after its
+system prompt, the messages before the run's own:
+
+```json
+"chat_history": {
+  "summary": "The customer asked whether Acme delivers to Pune.",
+  "messages": [
+    {"role": "human", "text": "And to Nashik?"},
+    {"role": "ai", "text": "Yes, in 2-3 business days."}
+  ]
+}
+```
+
+Each run it is in adds the message and the answer. Past its config's `summarise_after_tokens`, 10000 by default,
+its model (`provider`, `model`) summarises all but the last message, the old summary with it, and the history
+keeps that summary and the last message alone.
 
 ```json
 {
@@ -168,6 +215,11 @@ number through webhook overrides; LINE and email routes are configured per chann
 
 **Cron.** One scheduler job per `schedule` trigger calls the same URL on the node's `config.cron`.
 
+**Knowledge.** A chat model with `rag_search: true` may search the template's rag as it answers, with the
+`search_knowledge_base` tool: up to 3 rounds of searches, each search and what it found added to the conversation
+before the answer, so the nodes after it read what the answer was made of. A rag not ready, or not of the
+project, is not searched; the model is told so.
+
 **Credentials.** `values` hold non-secret account details (phone number id, username, callback id).
 `secret_values` hold tokens, passwords and API keys, encrypted with AES-256-GCM; the data key is wrapped by a
 KMS key. Only the backend decrypts them, at the moment a node needs them. They are never sent to clients.
@@ -176,7 +228,4 @@ KMS key. Only the backend decrypts them, at the moment a node needs them. They a
 
 - **Runs**: run history, and which node used how many credits.
   A template `version` field can be added then if runs need to record which version produced a reply.
-- **Loop counters**: how many times a node may run in one run, kept in the node's config.
-- **Knowledge (RAG)**: how an agent searches the rag its template's `rag_id` names once `rag_enabled` is on.
-  For now `rag_id` is data only; nothing reads it yet.
 - **Billing**: credit prices per model.

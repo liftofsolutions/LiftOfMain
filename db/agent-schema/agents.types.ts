@@ -19,6 +19,10 @@
 //   id, or from INPUT / to OUTPUT; no node has an id in KEPT_NODE_IDS. A
 //   graph has one edge from INPUT and one or more to OUTPUT; nothing
 //   leads to INPUT or leaves OUTPUT, and every other node has an edge out.
+// - A node's config has rag_search only if its template has a rag_id.
+// - A node with several edges out is a chat_model node without
+//   rag_search. Its pick_limits are counts of 1 or more, by the id of a
+//   node it has an edge to, and leave one of those unlimited.
 //
 // Runtime:
 // - A node's effective config = mergeConfig(node_types.config, node.config).
@@ -26,16 +30,21 @@
 //   comes in at INPUT with its message and goes out at OUTPUT, one node at
 //   a time, and each node reads the conversation so far and adds its
 //   answer. A node with several edges out picks where the run goes on:
-//   its model reads each node they lead to by name and config.description.
-//   The agent's answer is the last message, taken at OUTPUT; a run of more
-//   than 25 steps is refused.
+//   its model reads each node they lead to by name and config.description,
+//   each as often as its config.pick_limits let it. The agent's answer is
+//   the last reply of a chat_model node with one edge out, or the last
+//   message if none answered, taken at OUTPUT; a run of more than 25 steps
+//   is refused.
+// - A chat_model node with config.rag_search searches the template's rag.
+//   A chat_history node keeps the conversation's chat history, in the
+//   shape ChatHistory gives, summarised past summarise_after_tokens.
 // - Webhook URL: /hooks/{projectId}/{agentId}/{triggerId}. Cron triggers: one scheduler job per trigger calls the same URL.
 // - Inbound pipeline: read agent → read template → find the enabled trigger and its node (in memory)
 //   → load the node's credential (same project) → verify the provider's signature → process.
 
 // ---------- node_types ----------
 
-export type NodeCategory = "chat_model" | "tool" | "io";
+export type NodeCategory = "chat_model" | "tool" | "io" | "memory";
 
 // The backend integration that runs a node. Handlers are code, so this list grows with the codebase.
 // Not limited to these.
@@ -43,6 +52,9 @@ export type Handler =
   | "openai_chat"
   | "anthropic_chat"
   | "gemini_chat"
+  | "deepseek_chat"
+  | "xai_chat"
+  | "chat_history"
   | "tavily_search"
   | "http_api"
   | "whatsapp"
@@ -74,7 +86,8 @@ export interface AgentNode {
   name: string;           // a label, e.g. "reply", "web_search"; nodes may share one
   // Overrides node_types.config, e.g. { model, system_prompt } or
   // { cron, timezone }. Its description is what a node picking where a
-  // run goes next reads of this one.
+  // run goes next reads of this one. A chat_model node may also have
+  // rag_search: true, and pick_limits: { "<node id>": count }.
   config: Config;
   created_at: Date;
   updated_at: Date;
@@ -176,6 +189,13 @@ export interface AgentMemory {
   updated_at: Date;
 }
 
+// The chat_history a chat_history node keeps: the summary of the
+// conversation before its messages, and those messages.
+export interface ChatHistory {
+  summary: string | null;
+  messages: { role: "human" | "ai"; text: string }[];
+}
+
 // ---------- Runtime helpers ----------
 
 function isPlainObject(v: unknown): v is Config {
@@ -263,6 +283,35 @@ export function validateTemplate(
   for (const nodeId of reached) {
     if (nodeIds.has(nodeId) && !nextNodes.has(nodeId)) {
       errors.push(`node ${nodeId}: no edge out; every node leads on`);
+    }
+  }
+
+  for (const node of template.nodes) {
+    const config = node.config;
+    const category = nodeTypes.get(node.node_type_id)?.category;
+    const targets = nextNodes.get(node.id) ?? new Set<string>();
+    if (config.rag_search && !template.rag_id) {
+      errors.push(`node ${node.name}: searches a rag the template lacks`);
+    }
+    if (targets.size > 1 && (category !== "chat_model" || config.rag_search)) {
+      errors.push(`node ${node.name}: several edges out, but it cannot pick`);
+    }
+    const limits = config.pick_limits ?? {};
+    if (!isPlainObject(limits)) {
+      errors.push(`node ${node.name}: pick_limits are not by node id`);
+      continue;
+    }
+    const limited = Object.keys(limits);
+    for (const [nodeId, limit] of Object.entries(limits)) {
+      if (!Number.isInteger(limit) || (limit as number) < 1) {
+        errors.push(`node ${node.name}: pick limit of ${nodeId} is no count`);
+      }
+      if (!targets.has(nodeId)) {
+        errors.push(`node ${node.name}: limits ${nodeId}, with no edge to it`);
+      }
+    }
+    if (limited.length > 0 && [...targets].every((t) => limited.includes(t))) {
+      errors.push(`node ${node.name}: pick_limits leave no way on`);
     }
   }
 
