@@ -1,5 +1,12 @@
 """Every kind of node an agent can reserve, the base they share, and the
-`Credential` they are reserved with, which is never shown.
+`Credential` they are reserved with, which is never shown; and the nodes
+an agent builds itself, never reserved: the special nodes every graph
+has, `InputNode` and `OutputNode`, and the `ChoosingNode` a chat model
+node with several edges out runs as.
+
+The reservable ones: a chat model node per provider, and the
+`ChatHistoryNode`, which keeps a conversation's turns, summarised once
+they grow long.
 
     from agents.nodes import NODE_CLASSES, Credential, NodeBase
 
@@ -16,8 +23,10 @@ code. Which node types exist, and their default configs, is data:
 off without a deploy.
 """
 
+from agents.nodes.chatHistoryNode import ChatHistoryNode
 from agents.nodes.chatModelNode import (
     ChatModelNode,
+    ChoosingNode,
     DeepSeekChatNode,
     GeminiChatNode,
     OpenAIChatNode,
@@ -25,6 +34,15 @@ from agents.nodes.chatModelNode import (
 )
 from agents.nodes.credential import Credential
 from agents.nodes.nodeBase import NodeBase
+from agents.nodes.specialNodes import (
+    INPUT_NODE_ID,
+    OUTPUT_ABOUT,
+    OUTPUT_NODE_ID,
+    SPECIAL_NODE_IDS,
+    InputNode,
+    OutputNode,
+    answerOf,
+)
 
 # Every kind of node that can be reserved, by its handler.
 NODE_CLASSES: dict[str, type[NodeBase]] = {
@@ -34,16 +52,26 @@ NODE_CLASSES: dict[str, type[NodeBase]] = {
         GeminiChatNode,
         DeepSeekChatNode,
         XAIChatNode,
+        ChatHistoryNode,
     )
 }
 
 __all__ = [
+    "INPUT_NODE_ID",
     "NODE_CLASSES",
+    "OUTPUT_ABOUT",
+    "OUTPUT_NODE_ID",
+    "SPECIAL_NODE_IDS",
+    "ChatHistoryNode",
     "ChatModelNode",
+    "ChoosingNode",
     "Credential",
     "DeepSeekChatNode",
     "GeminiChatNode",
+    "InputNode",
     "NodeBase",
     "OpenAIChatNode",
+    "OutputNode",
     "XAIChatNode",
+    "answerOf",
 ]

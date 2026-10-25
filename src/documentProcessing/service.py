@@ -392,6 +392,13 @@ async def queryRag(
     denied = await checkAccess(accountUuid, projectId)
     if denied is not None:
         return denied
+    return await searchRag(projectId, ragId, query)
+
+
+async def searchRag(projectId: str, ragId: str, query: str) -> dict:
+    """The parts of the project's ready rag that best answer `query`, as
+    `queryRag` gives them, with no account to check: as an agent of the
+    project searches its knowledge base."""
     rag = await fetchProjectRecord(utilities.RAGS, projectId, ragId)
     if rag is None:
         return errorResult(

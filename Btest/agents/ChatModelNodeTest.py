@@ -17,7 +17,10 @@ Every node is reserved as the example template's reply node.
 3. A call sends the system prompt, then the conversation, and adds the
    answer to `messages`; with no prompt in the config, the `chatAgent`
    prompt is sent.
-4. The node runs as the node of a LangGraph graph, under its name, and
+4. Choosing sends the same, and has the model answer in a shape: its
+   answer, and the id of one of the choices - each read with what it is
+   - and no other.
+5. The node runs as the node of a LangGraph graph, under its name, and
    releasing it deletes its model, credential and config, and keeps its
    id and name.
 
@@ -29,6 +32,7 @@ import asyncio
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
+from pydantic import ValidationError
 
 from agents.nodeManager import NodeManager
 from agents.nodes import (
@@ -38,6 +42,7 @@ from agents.nodes import (
     OpenAIChatNode,
     XAIChatNode,
 )
+from agents.nodes.chatModelNode import NEXT_ABOUT, nextStepOf
 from config import ServerConfig
 from LLM import agentChatModel
 
@@ -57,6 +62,13 @@ HANDLER_CASES = [
     ("xai_chat", XAIChatNode, "xai", "grok-4.5"),
 ]
 
+# Where a node may send the conversation next: each id, with what the
+# model reads of it.
+CHOICES = {
+    "e3877987-c576-4a8e-8763-a8a498d2f775": "handoff - Hands it to a person.",
+    "output": "the end of the run.",
+}
+
 # What a released reply node is left holding: its id and name, alone.
 RELEASED_NODE = {
     "_nodeId": REPLY_NODE_ID,
@@ -71,7 +83,9 @@ class RecordingModel:
     """Stands in for a provider's chat model.
 
     Answers every call with ANSWER, and keeps the model and settings it
-    was built with, and every list of messages it was sent.
+    was built with, and every list of messages it was sent. Asked to
+    answer in a shape, it keeps the shape, and picks `pick` - a test sets
+    it.
     """
 
     def __init__(self, model: str, settings: dict) -> None:
@@ -79,11 +93,32 @@ class RecordingModel:
         self.model = model
         self.settings = settings
         self.received: list[list] = []
+        self.shapes: list[type] = []
+        self.pick: str | None = None
 
     async def ainvoke(self, messages: list) -> AIMessage:
         """Keep `messages`, and answer with ANSWER."""
         self.received.append(list(messages))
         return AIMessage(ANSWER)
+
+    def with_structured_output(self, shape: type) -> "ShapedModel":
+        """The model, answering in `shape`."""
+        self.shapes.append(shape)
+        return ShapedModel(self, shape)
+
+
+class ShapedModel:
+    """A `RecordingModel` answering in a shape: ANSWER, and its pick."""
+
+    def __init__(self, model: RecordingModel, shape: type) -> None:
+        """`model`, answering in `shape`."""
+        self.model = model
+        self.shape = shape
+
+    async def ainvoke(self, messages: list) -> object:
+        """Keep `messages`, and answer in the shape, with the pick."""
+        self.model.received.append(list(messages))
+        return self.shape(message=ANSWER, next=self.model.pick)
 
 
 @pytest.fixture
@@ -227,12 +262,14 @@ class TestModelSettings:
 class TestCall:
     """What one call sends the model, and what it adds to the state."""
 
-    def testAnswerIsAddedToTheMessages(self, builtModels):
+    def testAnswerIsAddedToTheMessagesAndKeptAsTheRunsAnswer(
+        self, builtModels
+    ):
         node = reserveReply(NodeManager())
 
         update = asyncio.run(node(buildState()))
 
-        assert update == {"messages": [AIMessage(ANSWER)]}
+        assert update == {"messages": [AIMessage(ANSWER)], "answer": ANSWER}
 
     def testSystemPromptThenTheConversationAreSent(self, builtModels):
         node = reserveReply(NodeManager())
@@ -258,6 +295,48 @@ class TestCall:
         assert systemMessage.content.startswith(
             "You are a helpful assistant that answers from the context."
         )
+
+
+class TestChoice:
+    """A node picking where the conversation goes next."""
+
+    def testChoiceIsTheModelsAnswerAndItsPick(self, builtModels):
+        node = reserveReply(NodeManager())
+        [model] = builtModels
+        model.pick = "output"
+
+        answer, picked = asyncio.run(node.choose(buildState(), CHOICES))
+
+        assert (answer, picked) == (AIMessage(ANSWER), "output")
+        assert model.received == [
+            [SystemMessage(SYSTEM_PROMPT), HumanMessage(QUESTION)]
+        ]
+
+    def testModelIsAskedForItsAnswerAndOneOfTheChoices(self, builtModels):
+        node = reserveReply(NodeManager())
+        [model] = builtModels
+        model.pick = "output"
+
+        asyncio.run(node.choose(buildState(), CHOICES))
+
+        [shape] = model.shapes
+        schema = shape.model_json_schema()
+        assert schema["required"] == ["message", "next"]
+        assert schema["properties"]["message"]["type"] == "string"
+        nextStep = schema["properties"]["next"]
+        assert nextStep["enum"] == list(CHOICES)
+        assert nextStep["description"].splitlines() == [
+            NEXT_ABOUT,
+            "e3877987-c576-4a8e-8763-a8a498d2f775: handoff - Hands it to a "
+            "person.",
+            "output: the end of the run.",
+        ]
+
+    def testPickOutsideTheChoicesIsRefused(self):
+        nextStep = nextStepOf(CHOICES)
+
+        with pytest.raises(ValidationError):
+            nextStep(message=ANSWER, next="elsewhere")
 
 
 class TestInLangGraph:
