@@ -5,8 +5,9 @@
 //
 // Rules (enforced by the backend on every write; clients never write these collections directly):
 // - agent_templates.project_id missing = premade platform template; set = the project's own template.
-// - agent_templates.rag_id → a rag of the template's project (Knowledge
-//   schema); required when rag_enabled is true.
+// - agents.rag_id → a rag of the agent's project (Knowledge schema),
+//   ready; required when rag_enabled is true. Each agent has its own, so
+//   two agents of one template may search two rags.
 // - node_types.project_id missing = platform node type; set = the project's own preset on an existing handler.
 // - node.node_type_id → a platform node type, or one from the template's project.
 // - node.credential_id → a credential from the template's project. Platform templates hold no credentials;
@@ -19,7 +20,8 @@
 //   id, or from INPUT / to OUTPUT; no node has an id in KEPT_NODE_IDS. A
 //   graph has one edge from INPUT and one or more to OUTPUT; nothing
 //   leads to INPUT or leaves OUTPUT, and every other node has an edge out.
-// - A node's config has rag_search only if its template has a rag_id.
+// - A node with config.rag_search runs only in an agent with a rag_id,
+//   which the backend checks as it builds the agent.
 // - A node with several edges out is a chat_model node without
 //   rag_search. Its pick_limits are counts of 1 or more, by the id of a
 //   node it has an edge to, and leave one of those unlimited.
@@ -35,7 +37,7 @@
 //   the last reply of a chat_model node with one edge out, or the last
 //   message if none answered, taken at OUTPUT; a run of more than 25 steps
 //   is refused.
-// - A chat_model node with config.rag_search searches the template's rag.
+// - A chat_model node with config.rag_search searches its agent's rag.
 //   A chat_history node keeps the conversation's chat history, in the
 //   shape ChatHistory gives, summarised past summarise_after_tokens.
 // - Webhook URL: /hooks/{projectId}/{agentId}/{triggerId}. Cron triggers: one scheduler job per trigger calls the same URL.
@@ -127,8 +129,6 @@ export interface AgentTemplate {
   project_id?: string;    // FK → projects._id. Missing = premade platform template
   name: string;
   description?: string;
-  rag_enabled: boolean;   // use a knowledge base of the project (Knowledge schema)
-  rag_id?: string;        // FK → rags._id, same project; required when rag_enabled
   nodes: AgentNode[];
   edges: Edge[];          // one edge from INPUT; one or more to OUTPUT
   triggers: Trigger[];
@@ -147,6 +147,8 @@ export interface Agent {
   template_id: string;    // FK → agent_templates._id, same project
   name: string;
   status: AgentStatus;
+  rag_enabled?: boolean;  // its nodes with rag_search search rag_id
+  rag_id?: string;        // FK → rags._id, same project; required when rag_enabled
   created_by: string;     // FK → users._id
   created_at: Date;
   updated_at: Date;
@@ -290,9 +292,6 @@ export function validateTemplate(
     const config = node.config;
     const category = nodeTypes.get(node.node_type_id)?.category;
     const targets = nextNodes.get(node.id) ?? new Set<string>();
-    if (config.rag_search && !template.rag_id) {
-      errors.push(`node ${node.name}: searches a rag the template lacks`);
-    }
     if (targets.size > 1 && (category !== "chat_model" || config.rag_search)) {
       errors.push(`node ${node.name}: several edges out, but it cannot pick`);
     }

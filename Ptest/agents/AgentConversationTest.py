@@ -173,8 +173,8 @@ def newId() -> str:
 
 def agentRecordsOf(dummy: DummyData, ragId: str) -> list[tuple[str, dict]]:
     """The support agent's records, each with its collection: its two
-    node types, of the dummy project; its template, searching `ragId`;
-    and the agent."""
+    node types, of the dummy project; its template; and the agent,
+    searching `ragId`."""
     now = datetime.now(timezone.utc)
     stamps = {"created_at": now, "updated_at": now}
     chatTypeId, historyTypeId = newId(), newId()
@@ -194,8 +194,6 @@ def agentRecordsOf(dummy: DummyData, ragId: str) -> list[tuple[str, dict]]:
         "_id": templateId,
         "project_id": dummy.projectId,
         "name": "Ptest customer support",
-        "rag_enabled": True,
-        "rag_id": ragId,
         "nodes": [
             node(
                 guardId,
@@ -285,6 +283,8 @@ def agentRecordsOf(dummy: DummyData, ragId: str) -> list[tuple[str, dict]]:
                 "template_id": templateId,
                 "name": "Ptest support agent",
                 "status": "active",
+                "rag_enabled": True,
+                "rag_id": ragId,
                 "created_by": dummy.accountUuid,
                 **stamps,
             },

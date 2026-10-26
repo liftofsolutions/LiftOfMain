@@ -246,6 +246,76 @@ class TestModelSettings:
         assert model.settings["api_key"] == "platform-openai-key"
         assert model.settings["timeout"] == 60
 
+    @pytest.mark.parametrize(
+        ("handler", "model", "config", "reasoning"),
+        [
+            (
+                "openai_chat",
+                "gpt-5.4-nano",
+                {"reasoning_effort": "minimal"},
+                {"reasoning_effort": "minimal"},
+            ),
+            (
+                "gemini_chat",
+                "gemini-3.1-flash-lite",
+                {"reasoning_effort": "minimal"},
+                {"reasoning_effort": "minimal"},
+            ),
+            (
+                "deepseek_chat",
+                "deepseek-v4-flash",
+                {"thinking": False},
+                {"extra_body": {"thinking": {"type": "disabled"}}},
+            ),
+            (
+                "deepseek_chat",
+                "deepseek-v4-flash",
+                {"thinking": True},
+                {"extra_body": {"thinking": {"type": "enabled"}}},
+            ),
+            ("openai_chat", "gpt-5.4-nano", {}, {}),
+            ("deepseek_chat", "deepseek-v4-flash", {}, {}),
+            # Each provider's own setting only, and never a body of the
+            # config's own.
+            (
+                "openai_chat",
+                "gpt-5.4-nano",
+                {"thinking": False, "extra_body": {"a": 1}},
+                {},
+            ),
+            (
+                "deepseek_chat",
+                "deepseek-v4-flash",
+                {"reasoning_effort": "low"},
+                {},
+            ),
+            ("xai_chat", "grok-4.5", {"reasoning_effort": "low"}, {}),
+        ],
+        ids=[
+            "openaiEffort",
+            "geminiEffort",
+            "deepseekThinkingOff",
+            "deepseekThinkingOn",
+            "openaiUnset",
+            "deepseekUnset",
+            "openaiGivenOthers",
+            "deepseekGivenAnEffort",
+            "xaiGivenAnEffort",
+        ],
+    )
+    def testReasoningIsSetAsTheProviderTakesIt(
+        self, builtModels, handler, model, config, reasoning
+    ):
+        reserveReply(NodeManager(), handler, model=model, **config)
+
+        [built] = builtModels
+        settings = {
+            key: built.settings[key]
+            for key in ("reasoning_effort", "extra_body", "thinking")
+            if key in built.settings
+        }
+        assert settings == reasoning
+
     def testModelNotInConfigLLMIsRefusedWhenReserved(self, builtModels):
         nodeManager = NodeManager()
 

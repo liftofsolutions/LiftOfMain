@@ -7,7 +7,8 @@ template wires them into, which answers its queries.
     agent.release()
 
 An `Agent` holds who it is - agentId, name, projectId and templateId,
-from its record in `agents` - and the node manager it reserves its nodes
+from its record in `agents`, and its knowledge base, the record's
+`rag_id` when `rag_enabled` - and the node manager it reserves its nodes
 from. `build` readies it to run, once:
 
 1. It fetches its template from `agent_templates`, and parses the graph
@@ -18,8 +19,8 @@ from. `build` readies it to run, once:
 3. It reserves those nodes from the node manager, each configured as it
    will run. A chat model takes no credential: it runs on the platform's
    key, which the node manager's chat model nodes hold. A node whose
-   config has `rag_search` is handed the template's rag, in `rag`, to
-   search: its knowledge base, `rag_id`.
+   config has `rag_search` is handed the agent's rag, in `rag`, to
+   search: so two agents of one template may each search their own.
 4. It builds the LangGraph graph of them, wired as the template says,
    and keeps it compiled, in `graph`.
 
@@ -128,7 +129,7 @@ What cannot run is refused as it is built, with no node left reserved:
   runs has a type that is missing, inactive or another project's, or
   cannot be reserved - a handler no node class runs, as no io or tool
   node does yet, a name that is not a slug, a model `configLLM.json`
-  does not list; a node searches a rag the template has none of; or a
+  does not list; a node searches a rag, and the agent has none; or a
   node has several edges out but cannot pick - it is no chat model node,
   or it searches a rag - or its pick limits are not counts, name a node
   it has no edge to, or limit every node it goes on to.
@@ -149,7 +150,9 @@ from agents.nodes import (
     INPUT_NODE_ID,
     OUTPUT_ABOUT,
     OUTPUT_NODE_ID,
+    RUN_REPLY,
     SPECIAL_NODE_IDS,
+    AfterReplyNode,
     ChatModelNode,
     ChoosingNode,
     InputNode,
@@ -412,7 +415,8 @@ def buildGraph(
     for node in [InputNode(), *nodes]:
         targets = nextNodeIds[node.nodeId]
         if len(targets) == 1:
-            graph.add_node(node.nodeId, node)
+            ranNode = AfterReplyNode(node) if node.runsAfterReply else node
+            graph.add_node(node.nodeId, ranNode)
             graph.add_edge(node.nodeId, targets[0])
         else:
             choices = {target: aboutById[target] for target in targets}
@@ -437,23 +441,28 @@ class Agent:
         projectId: str,
         templateId: str,
         nodeManager: NodeManager,
+        ragId: str | None = None,
     ) -> None:
-        """An agent not built yet: who it is, and the node manager it
-        reserves its nodes from."""
+        """An agent not built yet: who it is, the node manager it reserves
+        its nodes from, and the rag its nodes search, if it has one."""
         self.agentId = agentId
         self.name = name
         self.projectId = projectId
         self.templateId = templateId
         self.nodeManager = nodeManager
+        self.ragId = ragId
         # Its reserved nodes, and the graph built of them.
         self.nodes: list[NodeBase] = []
         self.graph: CompiledStateGraph | None = None
         # The ids of the triggers that can start it.
         self.triggerIds: set[str] = set()
-        # Queries running now: a released agent hands its nodes back once
-        # none is.
+        # Queries running now, replied or not: a released agent hands its
+        # nodes back once none is.
         self.runningQueries = 0
         self.isReleased = False
+        # The runs going on, kept until they end, as asyncio keeps only a
+        # weak hold on a task.
+        self.runs: set[asyncio.Task] = set()
 
     def __repr__(self) -> str:
         """Who the agent is, and its nodes by name - nothing of their
@@ -486,7 +495,7 @@ class Agent:
         for node, nodeType in typedNodes:
             self._checkNodeType(node, nodeType)
         configs = [
-            self._configOf(node, nodeType, template)
+            self._configOf(node, nodeType)
             for node, nodeType in typedNodes
         ]
         try:
@@ -508,12 +517,15 @@ class Agent:
 
     async def query(self, message: str, convoId: str | None = None) -> Reply:
         """The agent's answer to `message`, in the conversation `convoId`
-        if one is named, and that id.
+        if one is named, and that id: given as soon as the run has it.
 
         The run comes in with a copy of the conversation's chat history -
-        empty, the first time, or with no conversation - and once it is
-        answered, the history it ends with is saved, if a conversation is
-        named.
+        empty, the first time, or with no conversation. It goes on in a
+        task of its own, and replies at its first after-reply node, or its
+        output node: the rest of it - keeping the history, summarising it
+        - and saving the history it ends with, if a conversation is named,
+        happen after the answer is handed back. A failure then is logged,
+        and nothing is saved.
 
         Raises:
             AgentNotRunnableError: If the run goes on past MAX_RUN_STEPS
@@ -523,16 +535,66 @@ class Agent:
         self.runningQueries += 1
         try:
             chatHistory = await self._chatHistoryOf(convoId)
+        except BaseException:
+            self._endQuery()
+            raise
+        reply = asyncio.get_running_loop().create_future()
+        run = asyncio.create_task(
+            self._runAndSave(message, chatHistory, convoId, reply)
+        )
+        self.runs.add(run)
+        run.add_done_callback(self.runs.discard)
+        # Shielded: a query cancelled while it waits leaves the run to go
+        # on, and save.
+        answer = await asyncio.shield(reply)
+        return Reply(answer, convoId)
+
+    async def _runAndSave(
+        self,
+        message: str,
+        chatHistory: dict,
+        convoId: str | None,
+        reply: asyncio.Future,
+    ) -> None:
+        """Run the graph on `message`, giving `reply` its answer as the run
+        replies, then save the chat history it ends with, in the
+        conversation `convoId` if one is named.
+
+        A failure before the reply is the reply's; one after it is logged.
+        """
+        RUN_REPLY.set(reply)
+        try:
             state = await self._run(message, chatHistory)
             if convoId is not None:
                 await agentStore.saveChatHistory(
                     self.agentId, self.projectId, convoId, state["chatHistory"]
                 )
+        except Exception as error:
+            if not reply.done():
+                reply.set_exception(error)
+            else:
+                LOGGER.exception(
+                    "Agent %s replied in conversation %s, then failed; its "
+                    "chat history is not saved.",
+                    self.agentId,
+                    convoId,
+                )
         finally:
-            self.runningQueries -= 1
-            if self.isReleased and self.runningQueries == 0:
-                self._returnNodes()
-        return Reply(state["answer"], convoId)
+            if not reply.done():
+                reply.cancel()
+            self._endQuery()
+
+    async def settle(self) -> None:
+        """Wait until every run going on has ended: replied, its chat
+        history saved or its failure logged."""
+        await asyncio.gather(*self.runs)
+
+    def _endQuery(self) -> None:
+        """A query has ended: if the agent is released and it was the last,
+        its nodes go back."""
+        self.runningQueries -= 1
+        if self.isReleased and self.runningQueries == 0:
+            self._returnNodes()
 
     async def _run(self, message: str, chatHistory: dict) -> dict:
         """The state a run of the graph on `message` ends with, coming in
@@ -567,7 +629,8 @@ class Agent:
 
     def release(self) -> None:
         """Let the agent go: its nodes go back to the node manager at once,
-        or, while queries run, once the last of them is answered."""
+        or, while queries run, once the last of them ends - saved, after
+        its reply."""
         self.isReleased = True
         if self.runningQueries == 0:
             self._returnNodes()
@@ -618,25 +681,27 @@ class Agent:
                 f"Node {name!r} has an inactive node type."
             )
 
-    def _configOf(self, node: dict, nodeType: dict, template: dict) -> dict:
+    def _configOf(self, node: dict, nodeType: dict) -> dict:
         """The config the node runs with: its own, merged over its type's;
-        and, if it has `rag_search`, the template's rag, in `rag`, as no
+        and, if it has `rag_search`, the agent's rag, in `rag`, as no
         config but the agent's names it.
 
         Raises:
             AgentNotRunnableError: If the node searches a rag, and the
-                template has none.
+                agent has none.
         """
         config = mergeConfig(nodeType.get("config", {}), node.get("config", {}))
         config.pop("rag", None)
         if config.get("rag_search"):
-            ragId = template.get("rag_id")
-            if not template.get("rag_enabled") or not ragId:
+            if self.ragId is None:
                 raise AgentNotRunnableError(
-                    f"Node {node['name']!r} searches a rag, and template "
-                    f"{self.templateId!r} has none."
+                    f"Node {node['name']!r} searches a rag, and agent "
+                    f"{self.agentId!r} has none."
                 )
-            config["rag"] = {"project_id": self.projectId, "rag_id": ragId}
+            config["rag"] = {
+                "project_id": self.projectId,
+                "rag_id": self.ragId,
+            }
         return config
 
     def _reserve(self, node: dict, nodeType: dict, config: dict) -> NodeBase:
@@ -682,7 +747,12 @@ async def loadAgent(
             f"Agent {agentId!r} is {status}; only an active agent runs."
         )
     agent = Agent(
-        agentId, record["name"], projectId, record["template_id"], nodeManager
+        agentId,
+        record["name"],
+        projectId,
+        record["template_id"],
+        nodeManager,
+        record.get("rag_id") if record.get("rag_enabled") else None,
     )
     await agent.build()
     return agent

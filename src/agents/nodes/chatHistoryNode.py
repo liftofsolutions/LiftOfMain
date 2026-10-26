@@ -32,6 +32,9 @@ summary, and the last message alone.
 Its model is any one `configLLM.json` lists, on the platform's key: the
 config's `provider` and `model`. It takes no credential.
 
+It runs after the run replies (`runsAfterReply`): the asker has the
+answer before the turn is kept, summarised or saved.
+
 Every chat model node reads the history this node keeps: its summary,
 `summaryOf`, after its system prompt, and its messages,
 `historyMessagesOf`, before the run's own.
@@ -85,6 +88,7 @@ class ChatHistoryNode(NodeBase):
 
     handler = "chat_history"
     description = "Keeps the conversation, summarised once it grows long."
+    runsAfterReply = True
 
     def __init__(self, nodeId: str, name: str) -> None:
         """The template node `nodeId`, named `name`, with no model until

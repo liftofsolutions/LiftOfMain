@@ -74,5 +74,6 @@ On Firestore, set a TTL policy on `rag_jobs.expires_at` for the same automatic c
 
 ## Open item
 
-Agent templates have `rag_enabled: true`. Which rags an agent searches is still to decide:
-automatic by the customer's country (`ragsForCountry()`), or an explicit `rag_ids` list on the agent.
+An agent searches the one rag its own record names: `rag_enabled`, with `rag_id` (see `db/agent-schema`).
+Whether an agent should search several - automatic by the customer's country (`ragsForCountry()`), or an
+explicit `rag_ids` list on the agent - is still to decide.

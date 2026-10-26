@@ -24,10 +24,15 @@ config picks:
   `systemPrompt.json` when it is not set.
 * `temperature`, `max_tokens` - optional; they replace the model's own
   settings from `configLLM.json`. OpenAI's gpt-5 models take only their
-  default temperature, so LangChain drops any other.
-
+  default temperature, so LangChain drops any other. A reasoning model
+  counts its reasoning in `max_tokens`.
+* how much the model reasons before it answers - optional, its
+  provider's own: `reasoning_effort` on OpenAI and Gemini - "minimal",
+  "low", "medium" or "high"; `thinking` on DeepSeek - false
+  to answer without thinking, which its forced tool calls, as a node
+  picking where a run goes makes them, need.
 * `rag_search` - optional; true lets the model search the agent's
-  knowledge base, the rag its template names, which the agent hands the
+  knowledge base, the rag its record names, which the agent hands the
   node as it reserves it, in `rag`: `{"project_id", "rag_id"}`.
 * `pick_limits` - optional, for a node with several edges out: the most
   times a run's model picks each node, by id. `{"<draft>": 3}` sends a
@@ -147,6 +152,9 @@ class ChatModelNode(NodeBase):
 
     # The provider, as configLLM.json and LangChain name it.
     provider: ClassVar[str] = ""
+    # The config key of how much its models reason, as LangChain names
+    # the setting; none, for a provider whose nodes do not set it.
+    reasoningSetting: ClassVar[str | None] = None
 
     def __init__(self, nodeId: str, name: str) -> None:
         """The template node `nodeId`, named `name`, with no chat model
@@ -171,9 +179,17 @@ class ChatModelNode(NodeBase):
             for setting in CONFIG_SETTINGS
             if setting in self.config
         }
+        overrides.update(self.reasoningOverrides())
         self.chatModel = buildChatModel(
             DEFAULT_ROLE, self.provider, self.config["model"], overrides
         )
+
+    def reasoningOverrides(self) -> dict:
+        """The model's settings for how much it reasons, as the config
+        says: its `reasoningSetting`, if the config has it."""
+        if self.reasoningSetting not in self.config:
+            return {}
+        return {self.reasoningSetting: self.config[self.reasoningSetting]}
 
     def deconfigure(self) -> None:
         """Delete the chat model, then the credential and config."""
@@ -262,6 +278,7 @@ class OpenAIChatNode(ChatModelNode):
 
     handler = "openai_chat"
     provider = "openai"
+    reasoningSetting = "reasoning_effort"
     description = "Answers the conversation with an OpenAI chat model."
 
 
@@ -270,6 +287,7 @@ class GeminiChatNode(ChatModelNode):
 
     handler = "gemini_chat"
     provider = "google_genai"
+    reasoningSetting = "reasoning_effort"
     description = "Answers the conversation with a Google Gemini chat model."
 
 
@@ -279,6 +297,14 @@ class DeepSeekChatNode(ChatModelNode):
     handler = "deepseek_chat"
     provider = "deepseek"
     description = "Answers the conversation with a DeepSeek chat model."
+
+    def reasoningOverrides(self) -> dict:
+        """DeepSeek's thinking, on or off as the config's `thinking` says:
+        sent in the request's body, as DeepSeek's API takes it."""
+        if "thinking" not in self.config:
+            return {}
+        thinking = "enabled" if self.config["thinking"] else "disabled"
+        return {"extra_body": {"thinking": {"type": thinking}}}
 
 
 class XAIChatNode(ChatModelNode):

@@ -65,7 +65,7 @@ from DbAdapters.pineconeDb.pineconeAdapter import PineconeAdapter
 LOGGER = logging.getLogger(__name__)
 
 # Workers on the queue, and connections held open to Pinecone for them.
-MAX_CONNECTIONS = 10
+MAX_CONNECTIONS = 1000
 
 # Text records per add request; the records API embeds them, and caps a
 # request at 96.

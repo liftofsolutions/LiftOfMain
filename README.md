@@ -109,12 +109,31 @@ created -> submitted -> running -> done | failed
 
 ### Agents
 
-An agent is for public use: it needs no account, only the project it
-belongs to.
+An agent is configured by a member of its project, under the account
+and the project, as a rag is; it is asked by anyone, with no account,
+only the project it belongs to.
 
-| Method | Path                                  | Does                            |
-| ------ | ------------------------------------- | ------------------------------- |
-| `POST` | `/agents/{projectId}/{agentId}/query` | The agent's answer to a message |
+| Method | Path                                                | Does                             |
+| ------ | --------------------------------------------------- | -------------------------------- |
+| `POST` | `/agents/{accountUuid}/{projectId}`                 | Make an agent, running a template |
+| `POST` | `/agents/{accountUuid}/{projectId}/{agentId}/rag`   | Give the agent's template a rag  |
+| `POST` | `/agents/{projectId}/{agentId}/query`               | The agent's answer to a message  |
+
+```json
+{"name": "Acme support", "templateId": "8f32ea63-..."}
+```
+
+Making an agent answers `{"agentId", "projectId", "templateId", "name",
+"status": "active"}`. The template is one of the project's, or a premade
+platform template, copied into the project for the agent. Giving it a
+rag, `{"ragId": "3700255f-..."}`, takes a ready rag of the project, for
+that agent alone: its nodes with `rag_search` search it, from its next
+query, and other agents of its template keep their own. Both answer 403 for an
+account not in the project, 404 for an account, project, template,
+agent or rag not there, 409 for an inactive template or a rag not
+ready, and 422 for an id that is not a UUID.
+
+Asking an agent:
 
 ```json
 {"message": "Do you deliver to Pune?"}
@@ -130,7 +149,7 @@ next message reads it without going to Firestore. A message with no
 `convoId` - a cron agent's, say - is of no conversation, and nothing of
 it is kept. A `chat_history` node keeps the turns, and summarises them
 once they pass 10000 tokens; a chat model node with `rag_search` searches
-the template's rag as it answers.
+its agent's rag as it answers.
 
 ```json
 {"message": "How long does it take?", "convoId": "6b0e3c1a-..."}

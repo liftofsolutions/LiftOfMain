@@ -70,6 +70,9 @@ class NodeBase(ABC):
     requiresCredential: ClassVar[bool] = False
     # What the node does, as a model reads it to know when to use it.
     description: ClassVar[str] = ""
+    # Whether it runs after the run replies, its work not delaying the
+    # answer: see `agents.nodes.specialNodes`.
+    runsAfterReply: ClassVar[bool] = False
 
     def __init__(self, nodeId: str, name: str) -> None:
         """The template node `nodeId`, named `name`, for good; with no
