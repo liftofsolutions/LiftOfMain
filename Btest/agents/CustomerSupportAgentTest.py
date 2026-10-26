@@ -8,7 +8,7 @@
 * guard - a chat model that turns away what support should not answer,
   going out with its own reply, or passes the message on to support.
 * support - a chat model that answers the customer, searching the
-  agent's knowledge base, the template's rag, as it needs.
+  agent's knowledge base, the rag its record names, as it needs.
 * review - a chat model that passes support's reply, or sends it back
   with what to change: three times at most, by its `pick_limits`,
   counted in its `nodeDetails`.
@@ -36,7 +36,7 @@ the nodes, LangGraph and `searchRag`.
    message, the old summary with it - and keeps that summary and the
    last message; at 10000, it is kept whole. The next run's nodes read
    the summary after their system prompts.
-4. Refused as built: a node searching a rag the template has none of;
+4. Refused as built: a node searching a rag, of an agent with none;
    pick limits that are not counts, name a node with no edge, or limit
    every way on; a node picking that cannot - no chat model, or one
    searching a rag; and a history node with no count of tokens.
@@ -45,6 +45,7 @@ the nodes, LangGraph and `searchRag`.
 """
 
 import asyncio
+import logging
 
 import pytest
 
@@ -56,6 +57,9 @@ from AgentManagerTest import (  # noqa: F401
     CONVO_ID,
     PROJECT_ID,
     FakeFirestore,
+    SettlingAgentManager,
+    runWithin,
+    buildAgent,
     buildTemplate,
     chatHistoryIdOf,
     firestore,
@@ -66,7 +70,12 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 from agents.agent import AgentNotRunnableError
 from agents.agentManager import AgentManager
-from agents.agentStore import AGENT_MEMORY, AGENT_TEMPLATES, NODE_TYPES
+from agents.agentStore import (
+    AGENT_MEMORY,
+    AGENT_TEMPLATES,
+    AGENTS,
+    NODE_TYPES,
+)
 from agents.nodeManager import NodeManager
 from agents.nodes import INPUT_NODE_ID, OUTPUT_NODE_ID
 from agents.nodes import chatHistoryNode
@@ -121,9 +130,11 @@ class ScriptedModel:
     A plain call answers with the next message of the script; asked to
     answer in a shape, as a picking node asks, with the next `(message,
     next)` pair, in that shape - so a pick outside the shape's choices
-    fails, as a real model's constrained answer cannot be. It keeps each
-    list of messages it was sent, each shape, and each binding of tools,
-    with its settings.
+    fails, as a real model's constrained answer cannot be. An error in
+    the script is raised instead of answering, and given a `gate`, a
+    plain call answers once the gate is set. It keeps each list of
+    messages it was sent, each shape, and each binding of tools, with its
+    settings.
     """
 
     def __init__(self) -> None:
@@ -132,11 +143,18 @@ class ScriptedModel:
         self.received: list[list] = []
         self.shapes: list[type] = []
         self.bindings: list[tuple[list, dict]] = []
+        self.gate: asyncio.Event | None = None
 
     async def ainvoke(self, messages: list) -> AIMessage:
-        """Keep `messages`, and answer with the next of the script."""
+        """Keep `messages`, and answer with the next of the script - once
+        the gate is set, if there is one."""
         self.received.append(list(messages))
-        return self.script.pop(0)
+        if self.gate is not None:
+            await self.gate.wait()
+        answer = self.script.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
     def bind_tools(self, tools: list, **settings) -> "ScriptedModel":
         """The model, the tools bound: kept, with their settings."""
@@ -270,14 +288,8 @@ SUPPORT_EDGES = [
 
 
 def buildSupportTemplate(**overrides) -> dict:
-    """The support agent's template: its nodes, wired by SUPPORT_EDGES,
-    and its rag."""
-    template = {
-        "nodes": buildSupportNodes(),
-        "edges": SUPPORT_EDGES,
-        "rag_enabled": True,
-        "rag_id": RAG_ID,
-    }
+    """The support agent's template: its nodes, wired by SUPPORT_EDGES."""
+    template = {"nodes": buildSupportNodes(), "edges": SUPPORT_EDGES}
     template.update(overrides)
     return buildTemplate(**template)
 
@@ -335,7 +347,9 @@ def pinecone(monkeypatch) -> FakePinecone:
 @pytest.fixture
 def supportManager(monkeypatch, firestore, pinecone) -> AgentManager:
     """A manager with no agent kept, the support agent's records in
-    Firestore, and every model a `ScriptedModel`."""
+    Firestore - the agent searching RAG_ID - and every model a
+    `ScriptedModel`."""
+    firestore.put(AGENTS, buildAgent(rag_enabled=True, rag_id=RAG_ID))
     firestore.put(AGENT_TEMPLATES, buildSupportTemplate())
     firestore.put(NODE_TYPES, buildHistoryNodeType())
     firestore.put(utilities.RAGS, buildRag())
@@ -348,7 +362,7 @@ def supportManager(monkeypatch, firestore, pinecone) -> AgentManager:
         "init_chat_model",
         lambda model, **settings: ScriptedModel(),
     )
-    return AgentManager(NodeManager())
+    return SettlingAgentManager(NodeManager())
 
 
 def modelsOf(agentManager: AgentManager) -> dict[str, ScriptedModel]:
@@ -672,6 +686,50 @@ class TestChatHistory:
             assert systemPrompt.text.endswith(f"{SUMMARY_ABOUT}\n{SUMMARY}")
             assert textsOf(messages)[:2] == [ANSWER, "And Pune?"]
 
+    def testAnswerGoesBackBeforeTheHistoryIsSummarisedAndSaved(
+        self, monkeypatch, supportManager, firestore
+    ):
+        monkeypatch.setattr(chatHistoryNode, "countTokens", lambda text: 10_001)
+        models = modelsOf(supportManager)
+        for nodeId, script in passedAndAnswered().items():
+            models[nodeId].script = list(script)
+        summarising = asyncio.Event()
+        models["history"].gate = summarising
+
+        async def askThenLetItSummarise() -> tuple:
+            reply = await AgentManager.query(
+                supportManager, PROJECT_ID, AGENT_ID, QUESTION, CONVO_ID
+            )
+            savedAtReply = storedChatHistory(firestore, CONVO_ID)
+            summarising.set()
+            await supportManager.settle()
+            return reply, savedAtReply
+
+        reply, savedAtReply = runWithin(askThenLetItSummarise())
+
+        assert reply.answer == ANSWER
+        assert savedAtReply is None
+        stored = storedChatHistory(firestore, CONVO_ID)["chat_history"]
+        assert stored == {
+            "summary": SUMMARY,
+            "messages": [{"role": "ai", "text": ANSWER}],
+        }
+
+    def testRunFailingAfterItsAnswerIsLoggedAndSavesNothing(
+        self, monkeypatch, supportManager, firestore, caplog
+    ):
+        monkeypatch.setattr(chatHistoryNode, "countTokens", lambda text: 10_001)
+        scripts = passedAndAnswered()
+        scripts["history"] = [RuntimeError("The summarizer is down.")]
+
+        with caplog.at_level(logging.ERROR, logger="agents.agent"):
+            answer, _ = ask(supportManager, scripts)
+
+        assert answer == ANSWER
+        assert "then failed; its chat history is not saved" in caplog.text
+        assert "The summarizer is down." in caplog.text
+        assert storedChatHistory(firestore, CONVO_ID) is None
+
 
 def withConfig(nodeId: str, **config) -> list[tuple[str, dict]]:
     """The support template, the node `nodeId`'s config updated with
@@ -684,8 +742,12 @@ def withConfig(nodeId: str, **config) -> list[tuple[str, dict]]:
 # built, and a part of the refusal's message.
 NOT_BUILT_CASES = {
     "ragSearchWithNoRag": (
-        [(AGENT_TEMPLATES, buildSupportTemplate(rag_enabled=False))],
-        "searches a rag, and template",
+        [(AGENTS, buildAgent())],
+        "searches a rag, and agent",
+    ),
+    "ragNotEnabled": (
+        [(AGENTS, buildAgent(rag_enabled=False, rag_id=RAG_ID))],
+        "searches a rag, and agent",
     ),
     "pickLimitNotACount": (
         withConfig("review", pick_limits={"support": "3"}),

@@ -6,6 +6,8 @@ conversations: Firestore, cached in memoryDb.
     nodeType = await fetchNodeType(node["node_type_id"])
     chatHistory = await fetchChatHistory(agentId, convoId)
     await saveChatHistory(agentId, projectId, convoId, chatHistory)
+    template = await fetchStored(AGENT_TEMPLATES, templateId)
+    await saveRecords([(AGENT_TEMPLATES, template), (AGENTS, agent)])
 
 The `agents`, `agent_templates` and `node_types` collections of
 `db/agent-schema`, read through `documentProcessing.utilities`: from the
@@ -16,6 +18,9 @@ are registered when this module is imported.
 
 A cached record is not read from Firestore again until it is dropped. A
 record is handed out as it is cached, so it is read, never changed.
+A record about to be changed is read with `fetchStored`, from Firestore
+itself, and saved with `saveRecords`: to Firestore, all of them or
+none, then to the cache, so this process reads them as saved.
 
 A conversation's chat history is an `agent_memory` record: whatever the
 agent's nodes keep of it, a plain dict, read as the records above are,
@@ -27,7 +32,7 @@ Firestore.
 
 from datetime import datetime, timezone
 
-from DbAdapters import Document
+from DbAdapters import Document, setOperation
 from DbAdapters.memoryDb import EVICTION_LRU, CollectionConfig, getMemoryDb
 from documentProcessing import utilities
 
@@ -71,6 +76,31 @@ async def fetchTemplate(templateId: str) -> dict | None:
 async def fetchNodeType(nodeTypeId: str) -> dict | None:
     """The node type's record."""
     return await utilities.fetchRecord(NODE_TYPES, nodeTypeId)
+
+
+async def fetchStored(collection: str, recordId: str) -> dict | None:
+    """The record as Firestore holds it now, not as it is cached: one
+    about to be changed."""
+    stored = await utilities.getFirestoreAdapter().fetchDocument(
+        collection, recordId
+    )
+    return None if stored is None else stored.data
+
+
+async def saveRecords(records: list[tuple[str, dict]]) -> None:
+    """Save `records`, each under its `_id`, with its collection: to
+    Firestore, all of them or none, then to the cache.
+
+    The cache is written last, so it never holds what Firestore does not.
+    """
+    await utilities.getFirestoreAdapter().applyAtomically(
+        [
+            setOperation(collection, Document(record["_id"], record))
+            for collection, record in records
+        ]
+    )
+    for collection, record in records:
+        getMemoryDb().addRecord(collection, record["_id"], record)
 
 
 def chatHistoryIdOf(agentId: str, convoId: str) -> str:

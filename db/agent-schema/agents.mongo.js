@@ -76,25 +76,18 @@ const edge = {
 const agentTemplatesValidator = {
   $jsonSchema: {
     bsonType: "object",
-    required: ["_id", "name", "rag_enabled", "nodes", "edges", "triggers", "is_active", "created_at", "updated_at"],
+    required: ["_id", "name", "nodes", "edges", "triggers", "is_active", "created_at", "updated_at"],
     properties: {
       _id: uuid,
       project_id: uuid, // FK → projects._id. Missing = premade platform template
       name: { bsonType: "string", minLength: 1, maxLength: 120 },
       description: { bsonType: "string", maxLength: 2000 },
-      rag_enabled: { bsonType: "bool" },
-      rag_id: uuid, // FK → rags._id (Knowledge schema)
       nodes: { bsonType: "array", items: node },
       edges: { bsonType: "array", minItems: 1, items: edge }, // the graph
       triggers: { bsonType: "array", items: trigger },
       is_active: { bsonType: "bool" },
       ...timestamps,
     },
-    // A template with rag_enabled names its knowledge base in rag_id.
-    anyOf: [
-      { properties: { rag_enabled: { enum: [false] } } },
-      { required: ["rag_id"] },
-    ],
   },
 };
 
@@ -108,10 +101,17 @@ const agentsValidator = {
       template_id: uuid, // FK → agent_templates._id
       name: { bsonType: "string", minLength: 1, maxLength: 120 },
       status: { enum: ["active", "paused"] },
+      rag_enabled: { bsonType: "bool" },
+      rag_id: uuid, // FK → rags._id (Knowledge schema)
       created_by: uuid,  // FK → users._id
       ...timestamps,
       deleted_at: { bsonType: "date" },
     },
+    // An agent with rag_enabled names its knowledge base in rag_id.
+    anyOf: [
+      { properties: { rag_enabled: { enum: [false] } } },
+      { required: ["rag_id"] },
+    ],
   },
 };
 

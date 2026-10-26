@@ -52,6 +52,7 @@ the chat model node, LangGraph and the service.
 
 import asyncio
 import copy
+import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -125,6 +126,7 @@ class FakeFirestore:
         self.records: defaultdict[str, dict[str, dict]] = defaultdict(dict)
         self.reads: list[tuple[str, str]] = []
         self.writes: list[tuple[str, str]] = []
+        self.batches: list[list[tuple[str, str]]] = []
 
     def put(self, collection: str, record: dict) -> None:
         """Store `record` under its `_id`, replacing what is there."""
@@ -150,6 +152,18 @@ class FakeFirestore:
         self.writes.append((collection, document.id))
         await asyncio.sleep(0)
         self.records[collection][document.id] = copy.deepcopy(document.data)
+
+    async def applyAtomically(self, operations: list) -> None:
+        """Store a copy of each write's fields, all at once, keeping them
+        as one batch of writes - after a wait, as a real commit waits."""
+        batch = [(write.collection, write.documentId) for write in operations]
+        self.batches.append(batch)
+        self.writes.extend(batch)
+        await asyncio.sleep(0)
+        for write in operations:
+            self.records[write.collection][write.documentId] = (
+                copy.deepcopy(write.data)
+            )
 
 
 class RecordingModel:
@@ -221,6 +235,19 @@ class ScriptedNode(NodeBase):
         for key in self.config.get("count", []):
             chatHistory[key] = chatHistory.get(key, 0) + 1
         return copy.deepcopy(self.config.get("update", {}))
+
+
+class SettlingAgentManager(AgentManager):
+    """An `AgentManager` whose query ends once its run has: saved after
+    its reply. Each test runs its queries under `asyncio.run`, which
+    cancels what is still going on as it returns; a server's loop goes
+    on, and lets the run end."""
+
+    async def query(self, *arguments, **settings) -> Reply:
+        """The reply, once the run that gave it has ended."""
+        reply = await super().query(*arguments, **settings)
+        await self.settle()
+        return reply
 
 
 def buildChatNodeType(**overrides) -> dict:
@@ -355,6 +382,29 @@ def storedChatHistory(
     )
 
 
+# How long a test that holds a run back waits for it: an answer that
+# never comes fails the test, rather than hanging it.
+RUN_SECONDS = 5
+
+
+def runWithin(coroutine) -> object:
+    """What `coroutine` returns, run within RUN_SECONDS."""
+    return asyncio.run(asyncio.wait_for(coroutine, RUN_SECONDS))
+
+
+def gateWrites(firestore: "FakeFirestore", monkeypatch) -> asyncio.Event:
+    """Hold every Firestore write until the gate it returns is set."""
+    gate = asyncio.Event()
+    upsertDocument = firestore.upsertDocument
+
+    async def upsertOnceOpen(*arguments, **keywords) -> None:
+        await gate.wait()
+        await upsertDocument(*arguments, **keywords)
+
+    monkeypatch.setattr(firestore, "upsertDocument", upsertOnceOpen)
+    return gate
+
+
 def askInConvo(
     agentManager: AgentManager, message: str, convoId: str = CONVO_ID
 ) -> Reply:
@@ -408,7 +458,6 @@ def buildTemplate(**overrides) -> dict:
         "_id": TEMPLATE_ID,
         "project_id": PROJECT_ID,
         "name": "Acme sales assistant",
-        "rag_enabled": False,
         "nodes": [buildReplyNode(), buildWhatsAppNode()],
         "edges": lineOf(REPLY_NODE_ID),
         "triggers": [],
@@ -732,8 +781,9 @@ def builtModels(monkeypatch) -> list[RecordingModel]:
 
 @pytest.fixture
 def agentManager(firestore, builtModels) -> AgentManager:
-    """A manager with no agent kept, on a node manager of its own."""
-    return AgentManager(NodeManager())
+    """A manager with no agent kept, on a node manager of its own, whose
+    queries end once their runs have."""
+    return SettlingAgentManager(NodeManager())
 
 
 @pytest.fixture
@@ -742,7 +792,7 @@ def scriptedManager(firestore, builtModels) -> AgentManager:
     node type in Firestore."""
     firestore.put(NODE_TYPES, buildScriptedNodeType())
     nodeClasses = {**NODE_CLASSES, ScriptedNode.handler: ScriptedNode}
-    return AgentManager(NodeManager(nodeClasses=nodeClasses))
+    return SettlingAgentManager(NodeManager(nodeClasses=nodeClasses))
 
 
 @pytest.fixture
@@ -1408,7 +1458,7 @@ class TestConvos:
         assert cached["chat_history"] == {"questions": 1}
 
     def testSaveFirestoreRefusesLeavesTheCachedChatHistory(
-        self, scriptedManager, firestore, memoryDb, monkeypatch
+        self, scriptedManager, firestore, memoryDb, monkeypatch, caplog
     ):
         putScriptedTemplate(
             firestore, buildScriptedNode("notes", count=["questions"])
@@ -1420,11 +1470,67 @@ class TestConvos:
 
         monkeypatch.setattr(firestore, "upsertDocument", refuseTheWrite)
 
-        with pytest.raises(ConnectionError):
-            askInConvo(scriptedManager, "And?")
+        with caplog.at_level(logging.ERROR, logger="agents.agent"):
+            reply = askInConvo(scriptedManager, "And?")
 
+        # The answer was given before the save; the failure is logged.
+        assert reply.answer == ANSWER
+        assert "then failed; its chat history is not saved" in caplog.text
+        assert "Firestore is out of reach." in caplog.text
         cached = memoryDb.getRecord(AGENT_MEMORY, chatHistoryIdOf(CONVO_ID))
         assert cached["chat_history"] == {"questions": 1}
+
+    def testReplyIsGivenBeforeTheChatHistoryIsSaved(
+        self, scriptedManager, firestore, monkeypatch
+    ):
+        putScriptedTemplate(
+            firestore, buildScriptedNode("notes", count=["questions"])
+        )
+        saving = gateWrites(firestore, monkeypatch)
+
+        async def askThenLetTheSaveThrough() -> tuple:
+            reply = await AgentManager.query(
+                scriptedManager, PROJECT_ID, AGENT_ID, QUESTION, CONVO_ID
+            )
+            savedAtReply = storedChatHistory(firestore, CONVO_ID)
+            saving.set()
+            await scriptedManager.settle()
+            return reply, savedAtReply
+
+        reply, savedAtReply = runWithin(askThenLetTheSaveThrough())
+
+        assert reply == Reply(ANSWER, CONVO_ID)
+        assert savedAtReply is None
+        saved = storedChatHistory(firestore, CONVO_ID)
+        assert saved["chat_history"] == {"questions": 1}
+
+    def testReleasedAgentKeepsItsNodesUntilItsRunIsSaved(
+        self, scriptedManager, firestore, monkeypatch
+    ):
+        putScriptedTemplate(
+            firestore, buildScriptedNode("notes", count=["questions"])
+        )
+        saving = gateWrites(firestore, monkeypatch)
+        nodeManager = scriptedManager.nodeManager
+
+        async def releaseWhileSaving() -> tuple:
+            await AgentManager.query(
+                scriptedManager, PROJECT_ID, AGENT_ID, QUESTION, CONVO_ID
+            )
+            agent = scriptedManager.agents[AGENT_ID]
+            reservedAtReply = set(agent.nodes)
+            scriptedManager.dropAgent(AGENT_ID)
+            stillReserved = reservedAtReply <= nodeManager.reservedNodes
+            saving.set()
+            await agent.settle()
+            return reservedAtReply, stillReserved
+
+        reservedAtReply, stillReserved = runWithin(releaseWhileSaving())
+
+        assert len(reservedAtReply) == 2
+        assert stillReserved
+        assert nodeManager.reservedNodes == set()
+        assert storedChatHistory(firestore, CONVO_ID) is not None
 
     def testConvoIsOfOneAgentAlone(self, scriptedManager, firestore):
         putScriptedTemplate(

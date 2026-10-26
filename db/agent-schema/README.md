@@ -18,8 +18,8 @@ MongoDB-style documents; works on Firestore today.
 | Collection | Owner | Holds |
 |---|---|---|
 | `node_types` | Platform, or one project | Reusable node templates: category, handler, default config |
-| `agent_templates` | Platform, or one project | An agent's structure: embedded `nodes[]`, `edges[]` and `triggers[]`; `rag_enabled`, with the `rag_id` of its knowledge base |
-| `agents` | One project | The running agent: which template, name, status |
+| `agent_templates` | Platform, or one project | An agent's structure: embedded `nodes[]`, `edges[]` and `triggers[]` |
+| `agents` | One project | The running agent: which template, name, status; `rag_enabled`, with the `rag_id` of its knowledge base |
 | `credentials` | One project | Keys and account details a node uses; secrets encrypted |
 | `agent_memory` | One agent | A conversation's chat history: whatever the agent's nodes keep of it, as a plain object |
 
@@ -37,7 +37,7 @@ projects        1 ── 0..N  agents
 projects     0..1 ── 0..N  agent_templates     (missing project_id = premade platform template)
 projects     0..1 ── 0..N  node_types          (missing project_id = platform node type)
 projects        1 ── 0..N  credentials
-rags         0..1 ── 0..N  agent_templates     (rag_id, set when rag_enabled; Knowledge schema)
+rags         0..1 ── 0..N  agents              (rag_id, set when rag_enabled; Knowledge schema)
 agent_templates 1 ── 0..N  agents
 agents          1 ── 0..N  agent_memory        (one per conversation)
 agent_templates 1 ── N     nodes      (embedded)
@@ -80,14 +80,15 @@ Clients never write these collections directly; all writes go through the backen
    graph has, `input` and `output`; no node has either id, nor LangGraph's `__start__` / `__end__`. A graph has
    one edge from `input` and one or more to `output`; nothing leads to `input` or leaves `output`, and every
    other node has an edge out.
-7. A template with `rag_enabled` names its knowledge base in `rag_id`: a rag of the template's project, from
-   the Knowledge schema. Only a template with one has nodes with `rag_search`.
+7. An agent with `rag_enabled` names its knowledge base in `rag_id`: a ready rag of the agent's project, from
+   the Knowledge schema. Each agent has its own, so two agents of one template may search two rags. A node with
+   `rag_search` runs only in an agent with one.
 8. A node with several edges out is a chat model, which picks, and does not search: no `rag_search`. A node's
    `pick_limits` are counts of 1 or more, by the id of a node it has an edge to, and leave one of those
    unlimited, so a run always has a way on.
 
-`validateTemplate()` in `agents.types.ts` implements rules 1–3 and 5–8. The backend checks rules 5–8 again as it
-builds an agent, and refuses one that breaks them. `agents.mongo.js` holds rule 7's part a validator can:
+`validateTemplate()` in `agents.types.ts` implements rules 1–3, 5, 6 and 8. The backend checks rules 5–8 again
+as it builds an agent, and refuses one that breaks them. `agents.mongo.js` holds rule 7's part a validator can:
 `rag_id` is required when `rag_enabled` is true.
 
 ## Runtime
@@ -156,6 +157,14 @@ asks this of a built agent with `isTriggerAvailable(triggerId)`.
 The backend builds an agent's graph once, on its first query: it reserves the nodes the edges name, configured
 with their merged config, compiles them into a LangGraph graph, and keeps it for the next queries.
 
+**Configure.** A member of a project makes an agent of it - `POST /agents/{accountUuid}/{projectId}` with
+`{"name", "templateId"}` - running one of the project's templates, or a premade platform template, which is
+copied into the project first; the agent is `active`, `created_by` the account. `POST
+/agents/{accountUuid}/{projectId}/{agentId}/rag` with `{"ragId"}` sets the agent's own `rag_enabled` and
+`rag_id` to a ready rag of the project (rule 7), and drops the agent if it is kept, so it is built afresh on its
+next query; other agents of its template keep their own rags. Both write Firestore, then the cache; another
+process sees the change once its own cache drops the records.
+
 **Query.** Anyone may ask an agent: `POST /agents/{projectId}/{agentId}/query` with `{"message": "..."}`. The
 agent must belong to `projectId`, be `active` and not deleted, and its template must build; nothing else is
 checked.
@@ -163,8 +172,10 @@ checked.
 **Conversations.** A query may name its conversation by a `convoId`, a UUID the caller picks; the first query
 with one starts the conversation. What is remembered of it is up to the agent's nodes: the run's state holds its
 `chatHistory`, a plain object - empty, the first time - which nodes read and change as they will. The backend loads
-it before the run and saves what the run ends with, once it is answered, to `agent_memory` and to memoryDb, so the
-next query reads it from memoryDb rather than Firestore. A run that fails saves nothing. A query with no
+it before the run and saves what the run ends with to `agent_memory` and to memoryDb, so the next query reads it
+from memoryDb rather than Firestore. The answer goes back first: a run replies at its first node that runs after
+the reply - a `chat_history` node - or at `output`, and keeping, summarising and saving the history happen after
+that. A run that fails saves nothing; one that fails after its reply is logged. A query with no
 `convoId` - a cron agent's report, say - is of no conversation: its history starts empty and is not saved. Each
 node also has its own details for the run, `nodeDetails[nodeId]`, which start empty each run and are not saved.
 
@@ -183,7 +194,12 @@ system prompt, the messages before the run's own:
 
 Each run it is in adds the message and the answer. Past its config's `summarise_after_tokens`, 10000 by default,
 its model (`provider`, `model`) summarises all but the last message, the old summary with it, and the history
-keeps that summary and the last message alone.
+keeps that summary and the last message alone. It runs once the agent has replied, so none of this delays the
+answer.
+
+A chat model node's config may also set how much its model reasons: `reasoning_effort` on OpenAI and Gemini
+(`minimal`, `low`, `medium`, `high`), `thinking: false` on DeepSeek, which a node that picks where a run goes
+needs - DeepSeek's thinking mode refuses the forced tool call a pick is made with.
 
 ```json
 {
@@ -215,7 +231,7 @@ number through webhook overrides; LINE and email routes are configured per chann
 
 **Cron.** One scheduler job per `schedule` trigger calls the same URL on the node's `config.cron`.
 
-**Knowledge.** A chat model with `rag_search: true` may search the template's rag as it answers, with the
+**Knowledge.** A chat model with `rag_search: true` may search its agent's rag as it answers, with the
 `search_knowledge_base` tool: up to 3 rounds of searches, each search and what it found added to the conversation
 before the answer, so the nodes after it read what the answer was made of. A rag not ready, or not of the
 project, is not searched; the model is told so.

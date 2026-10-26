@@ -24,7 +24,10 @@ agent is loaded again on its next query.
 A kept agent is not read from Firestore again while it is kept, nor are
 its records while memoryDb caches them: pausing an agent, or editing its
 template, reaches it once it is dropped and its records are gone from
-memoryDb, or the process restarts.
+memoryDb, or the process restarts. An agent this process changes, as
+the service does to give it a rag, is changed at once: `dropAgent`
+drops it if kept, and the cache holds its record as changed, so its
+next query builds it afresh.
 """
 
 import asyncio
@@ -109,6 +112,24 @@ class AgentManager:
             _, dropped = self.agents.popitem(last=False)
             dropped.release()
             LOGGER.info("Dropped %s, the least recently used.", dropped)
+
+    def dropAgent(self, agentId: str) -> bool:
+        """Drop and release the agent `agentId` if it is kept, so it is
+        built afresh on its next query, from its records as they are now;
+        whether it was kept."""
+        dropped = self.agents.pop(agentId, None)
+        if dropped is None:
+            return False
+        dropped.release()
+        LOGGER.info("Dropped %s, as it changed.", dropped)
+        return True
+
+    async def settle(self) -> None:
+        """Wait until every run of the kept agents has ended, its chat
+        history saved after its reply."""
+        await asyncio.gather(
+            *(agent.settle() for agent in list(self.agents.values()))
+        )
 
     async def query(
         self,

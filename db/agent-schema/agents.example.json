@@ -135,8 +135,6 @@
     "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
     "name": "Acme sales assistant",
     "description": "Answers product questions on WhatsApp and sends a daily follow-up.",
-    "rag_enabled": true,
-    "rag_id": "3700255f-a07c-4820-86eb-ba61fb732f77",
     "nodes": [
       {
         "id": "3b2e850e-2eba-4118-807d-0fbcf776fc84",
@@ -339,6 +337,8 @@
     "template_id": "8f32ea63-10e7-4105-a05d-ea0c7c02ff52",
     "name": "Acme Sales Bot",
     "status": "active",
+    "rag_enabled": true,
+    "rag_id": "3700255f-a07c-4820-86eb-ba61fb732f77",
     "created_by": "8f3c2a1e-5b7d-4c9a-a1f2-3e6b9d0c7a41",
     "created_at": "2026-10-05T06:30:00Z",
     "updated_at": "2026-10-05T06:30:00Z"

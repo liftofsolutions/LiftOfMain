@@ -6,7 +6,8 @@ node with several edges out runs as.
 
 The reservable ones: a chat model node per provider, and the
 `ChatHistoryNode`, which keeps a conversation's turns, summarised once
-they grow long.
+they grow long; and, for now, `FastSupportNode`, an experiment: a guard
+and support in one.
 
     from agents.nodes import NODE_CLASSES, Credential, NodeBase
 
@@ -33,12 +34,15 @@ from agents.nodes.chatModelNode import (
     XAIChatNode,
 )
 from agents.nodes.credential import Credential
+from agents.nodes.fastSupportNode import FastSupportNode
 from agents.nodes.nodeBase import NodeBase
 from agents.nodes.specialNodes import (
     INPUT_NODE_ID,
     OUTPUT_ABOUT,
     OUTPUT_NODE_ID,
+    RUN_REPLY,
     SPECIAL_NODE_IDS,
+    AfterReplyNode,
     InputNode,
     OutputNode,
     answerOf,
@@ -53,6 +57,7 @@ NODE_CLASSES: dict[str, type[NodeBase]] = {
         DeepSeekChatNode,
         XAIChatNode,
         ChatHistoryNode,
+        FastSupportNode,
     )
 }
 
@@ -61,12 +66,15 @@ __all__ = [
     "NODE_CLASSES",
     "OUTPUT_ABOUT",
     "OUTPUT_NODE_ID",
+    "RUN_REPLY",
     "SPECIAL_NODE_IDS",
+    "AfterReplyNode",
     "ChatHistoryNode",
     "ChatModelNode",
     "ChoosingNode",
     "Credential",
     "DeepSeekChatNode",
+    "FastSupportNode",
     "GeminiChatNode",
     "InputNode",
     "NodeBase",
