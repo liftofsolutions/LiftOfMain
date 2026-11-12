@@ -30,6 +30,13 @@ one that names none is of no conversation. An agent the project does not
 have is answered as not found, one that cannot run - paused, say - as a
 conflict.
 
+A provider - WhatsApp - reaches an agent at its query URL too, naming
+itself: `verifyProviderCallback` answers its check of the webhook, and
+`receiveProviderEvent` takes its event, answered in the background and
+sent back by the agent's io node of it, as `providerEvents` does. An
+agent with no enabled trigger of the provider, or none at all, is
+PAGE_NOT_FOUND; a call that fails the node's check, forbidden.
+
 Errors are returned, never raised: `{"error": message, "errorKind":
 kind}`, logged, with `errorKind` one of the `ERROR_*` constants for the
 route to turn into a status code.
@@ -44,6 +51,7 @@ from agents.agent import (
     AgentNotFoundError,
     AgentNotRunnableError,
 )
+from agents import providerEvents
 from agents.agentManager import getAgentManager
 from agents.agentStore import AGENT_TEMPLATES, AGENTS
 from documentProcessing import service as ragService
@@ -57,6 +65,8 @@ LOGGER = logging.getLogger(__name__)
 ERROR_NOT_FOUND = ragService.ERROR_NOT_FOUND
 ERROR_FORBIDDEN = ragService.ERROR_FORBIDDEN
 ERROR_CONFLICT = "conflict"
+# What a provider's call with nothing behind it is told.
+PAGE_NOT_FOUND = providerEvents.PAGE_NOT_FOUND
 
 
 def errorResult(errorKind: str, message: str) -> dict:
@@ -192,3 +202,61 @@ async def queryAgent(
         "convoId": reply.convoId,
         "answer": reply.answer,
     }
+
+
+def providerErrorOf(error: Exception) -> dict:
+    """The error a provider's call is answered with: the page not found,
+    for anything missing, so nothing tells an agent with no trigger from
+    no agent; a conflict for an agent that cannot run; forbidden for a
+    call that is not the provider's."""
+    if isinstance(
+        error, (providerEvents.PageNotFoundError, AgentNotFoundError)
+    ):
+        LOGGER.info("Provider call not found: %s", error)
+        return errorResult(ERROR_NOT_FOUND, providerEvents.PAGE_NOT_FOUND)
+    if isinstance(error, AgentNotRunnableError):
+        return errorResult(ERROR_CONFLICT, str(error))
+    return errorResult(ERROR_FORBIDDEN, str(error))
+
+
+async def verifyProviderCallback(
+    projectId: str, agentId: str, provider: str, query: dict
+) -> dict:
+    """The challenge answering `provider`'s check of the agent's webhook,
+    given its query parameters."""
+    try:
+        challenge = await providerEvents.verifyCallback(
+            projectId, agentId, provider, query
+        )
+    except (
+        providerEvents.PageNotFoundError,
+        providerEvents.NotFromProviderError,
+        AgentNotFoundError,
+        AgentNotRunnableError,
+    ) as error:
+        return providerErrorOf(error)
+    return {"challenge": challenge}
+
+
+async def receiveProviderEvent(
+    projectId: str,
+    agentId: str,
+    provider: str,
+    body: bytes,
+    headers: dict,
+) -> dict:
+    """Take `provider`'s event for the agent: how many messages it holds,
+    which the agent answers in the background, sent back by its io node
+    of `provider`."""
+    try:
+        count = await providerEvents.receiveEvent(
+            projectId, agentId, provider, body, headers
+        )
+    except (
+        providerEvents.PageNotFoundError,
+        providerEvents.NotFromProviderError,
+        AgentNotFoundError,
+        AgentNotRunnableError,
+    ) as error:
+        return providerErrorOf(error)
+    return {"status": "accepted", "messages": count}

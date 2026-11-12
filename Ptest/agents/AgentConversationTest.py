@@ -86,7 +86,11 @@ from RagQualityTest import (  # noqa: E402, F401
     waitUntilSearchable,
 )
 
-MODEL = "gpt-5.4-mini"
+# The agents' OpenAI model: the cheapest and fastest of `configLLM.json`.
+MODEL = "gpt-6-luna"
+# Its reasoning: none, as it calls tools - a search, a pick - only so on
+# chat completions.
+REASONING = "none"
 # The questions asked, in this order, in one conversation.
 QUESTION_IDS = [
     "product1.1.1",
@@ -256,7 +260,7 @@ def agentRecordsOf(dummy: DummyData, ragId: str) -> list[tuple[str, dict]]:
                 "category": "chat_model",
                 "handler": "openai_chat",
                 "name": "Ptest OpenAI chat",
-                "config": {"model": MODEL},
+                "config": {"model": MODEL, "reasoning_effort": REASONING},
                 "is_active": True,
                 **stamps,
             },

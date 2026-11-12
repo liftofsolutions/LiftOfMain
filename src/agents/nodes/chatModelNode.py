@@ -27,8 +27,10 @@ config picks:
   default temperature, so LangChain drops any other. A reasoning model
   counts its reasoning in `max_tokens`.
 * how much the model reasons before it answers - optional, its
-  provider's own: `reasoning_effort` on OpenAI and Gemini - "minimal",
-  "low", "medium" or "high"; `thinking` on DeepSeek - false
+  provider's own: `reasoning_effort` on OpenAI and Gemini - "none",
+  "minimal", "low", "medium" or "high", as the model takes them; a
+  gpt-6 model calls tools - a search, a pick - only at "none"; `thinking`
+  on DeepSeek - false
   to answer without thinking, which its forced tool calls, as a node
   picking where a run goes makes them, need.
 * `rag_search` - optional; true lets the model search the agent's

@@ -53,6 +53,14 @@ class QueryAgentRequest(BaseModel):
     )
 
 
+class ProviderEventResponse(BaseModel):
+    """A provider's event, taken: its messages are answered in the
+    background, and the answers sent back through the provider."""
+
+    status: str
+    messages: int
+
+
 class QueryAgentResponse(BaseModel):
     """The agent's answer, and the conversation it was given in."""
 

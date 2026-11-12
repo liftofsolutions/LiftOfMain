@@ -8,17 +8,26 @@ project and document server, and nothing from `src/`. The one exception
 is the agent's template and its node types: no endpoint writes those yet,
 so they are written by hand, to Firestore, as the backend will.
 
-The agent:
+The agent is one of FLOWS, as AGENT_STRESS_FLOW in the environment
+names it - `fastSupport`, unless it names another:
 
-    input -> guard -> support -> history -> output
-               |
-               +-> output   (turned away)
+* `guardThenSupport` - guard passes a question on to support, or turns
+  it away; support searches the agent's rag and answers:
 
-guard passes a question on to support, or turns it away, on GUARD_MODEL
-with no thinking, the fastest at it of the models tried; support
-searches the agent's rag and answers on MODEL, in SUPPORT_MAX_TOKENS at
-most; history keeps the turn, and summarises the conversation if it is
-past 10000 tokens, after the agent has replied.
+      input -> guard -> support -> history -> output
+                 |
+                 +-> output   (turned away)
+
+* `fastSupport` - the TEMPORARY `fast_support_chat` node, the same
+  guard and support in one: the guard's pick and the rag search at
+  once, then support's answer:
+
+      input -> fastSupport -> history -> output
+
+Every model is MODEL, OpenAI's, at REASONING - no reasoning, as it calls
+tools, a search or a pick, only so. Support answers in
+SUPPORT_MAX_TOKENS at most; history keeps the turn, and summarises the
+conversation if it is past 10000 tokens, after the agent has replied.
 
 In order:
 
@@ -33,20 +42,24 @@ In order:
    with a new `convoId` - are sent AT_ONCE at a time, and each is timed
    from its request to its answer.
 7. The report - how many were answered, the times, the throughput, the
-   searches of the rag the server logged, the conversations saved, and
-   every failure - is printed and saved to `Ptest/results/`.
+   searches of the rag the server logged, the conversations saved, the
+   tokens each model used and what they cost, and every failure - is
+   printed and saved to `Ptest/results/`. The tokens are the server's
+   `Model usage` lines, logged during the queries, and their cost is
+   by PRICES: Pinecone's is not counted.
 8. The conversations, the agent, its template and node types, then the
    rag and the dummy records are deleted.
 
 The test fails if any query is not answered, or answered empty, or the
 server logs an error, once the report is saved. A run spends real
-DeepSeek and OpenAI tokens - about three calls a query - and writes to
-the Firestore and Pinecone that `test.env` names:
+OpenAI tokens - two or three calls a query - and writes to the
+Firestore and Pinecone that `test.env` names:
 
     uv run pytest Ptest/agents/AgentStressTest.py -s
 
 `AGENT_STRESS_QUERIES` and `AGENT_STRESS_AT_ONCE` in the environment ask
-fewer queries, or fewer at once, for a smaller run.
+fewer queries, or fewer at once, for a smaller run;
+`AGENT_STRESS_FLOW=guardThenSupport` stresses the agent of two nodes.
 """
 
 import asyncio
@@ -72,6 +85,7 @@ from AgentConversationTest import (  # noqa: E402, F401
     GUARD_PROMPT,
     MODEL,
     NODE_TYPES,
+    REASONING,
     SUMMARISE_AFTER_TOKENS,
     SUPPORT_PROMPT,
     deleteRecords,
@@ -100,17 +114,28 @@ from RagQualityTest import (  # noqa: E402, F401
 
 # Queries asked, and how many at once: all of them, unless the
 # environment says less, for a smaller run.
-QUERY_COUNT = int(os.environ.get("AGENT_STRESS_QUERIES", 100))
+QUERY_COUNT = int(os.environ.get("AGENT_STRESS_QUERIES", 1000))
 AT_ONCE = int(os.environ.get("AGENT_STRESS_AT_ONCE", QUERY_COUNT))
 # How long a query may wait for its answer, while all the others wait on
 # the same models.
 QUERY_SECONDS = 900
-# The guard's model, which only picks: DeepSeek, its thinking off, as a
-# forced tool call - a pick - needs.
-GUARD_HANDLER = "deepseek_chat"
-GUARD_MODEL = "deepseek-v4-flash"
+# The guard's model, which only picks: the same as support's.
+GUARD_HANDLER = "openai_chat"
+GUARD_MODEL = MODEL
 # The most tokens support's answer may take.
 SUPPORT_MAX_TOKENS = 300
+# The agent stressed: one of FLOWS.
+FLOW = os.environ.get("AGENT_STRESS_FLOW", "fastSupport")
+# What each model costs, in dollars per million tokens - input, cached
+# input, output - as OpenAI's pricing page gave it on 2026-10-26.
+PRICES = {
+    "gpt-6-luna": (0.10, 0.01, 0.50),
+    "gpt-5.4-mini": (0.75, 0.075, 4.50),
+}
+# What starts a line of the server's log giving a model call's tokens,
+# as `LLM.usageLog` writes it; and the tokens it counts.
+USAGE_PREFIX = "Model usage: "
+TOKEN_KINDS = ("input", "cachedInput", "output", "reasoning")
 # How long the conversations may take to be saved, after the last reply,
 # and how often they are counted meanwhile.
 SAVE_SECONDS = 120
@@ -152,7 +177,10 @@ def agentRecordsOf(dummy: DummyData) -> list[tuple[str, dict]]:
                 "category": "chat_model",
                 "handler": GUARD_HANDLER,
                 "name": "Stress guard chat",
-                "config": {"model": GUARD_MODEL},
+                "config": {
+                    "model": GUARD_MODEL,
+                    "reasoning_effort": REASONING,
+                },
                 "is_active": True,
                 **stamps,
             },
@@ -165,7 +193,7 @@ def agentRecordsOf(dummy: DummyData) -> list[tuple[str, dict]]:
                 "category": "chat_model",
                 "handler": "openai_chat",
                 "name": "Stress OpenAI chat",
-                "config": {"model": MODEL},
+                "config": {"model": MODEL, "reasoning_effort": REASONING},
                 "is_active": True,
                 **stamps,
             },
@@ -197,7 +225,6 @@ def agentRecordsOf(dummy: DummyData) -> list[tuple[str, dict]]:
                         {
                             "system_prompt": GUARD_PROMPT,
                             "description": "Checks the message.",
-                            "thinking": False,
                         },
                     ),
                     node(
@@ -234,6 +261,96 @@ def agentRecordsOf(dummy: DummyData) -> list[tuple[str, dict]]:
             },
         ),
     ]
+
+
+def fastAgentRecordsOf(dummy: DummyData) -> list[tuple[str, dict]]:
+    """The fast support agent's template and its two node types, of the
+    dummy project, each with its collection, as they are written by
+    hand: the template last."""
+    now = datetime.now(timezone.utc)
+    stamps = {"created_at": now, "updated_at": now}
+    fastTypeId, historyTypeId, templateId = newId(), newId(), newId()
+    fastId, historyId = newId(), newId()
+    return [
+        (
+            NODE_TYPES,
+            {
+                "_id": fastTypeId,
+                "project_id": dummy.projectId,
+                "category": "chat_model",
+                "handler": "fast_support_chat",
+                "name": "Stress fast support",
+                "config": {"model": MODEL, "reasoning_effort": REASONING},
+                "is_active": True,
+                **stamps,
+            },
+        ),
+        (
+            NODE_TYPES,
+            {
+                "_id": historyTypeId,
+                "project_id": dummy.projectId,
+                "category": "memory",
+                "handler": "chat_history",
+                "name": "Stress chat history",
+                "config": {"provider": "openai", "model": MODEL},
+                "is_active": True,
+                **stamps,
+            },
+        ),
+        (
+            AGENT_TEMPLATES,
+            {
+                "_id": templateId,
+                "project_id": dummy.projectId,
+                "name": "Stress fast customer support",
+                "nodes": [
+                    {
+                        "id": fastId,
+                        "node_type_id": fastTypeId,
+                        "name": "fastSupport",
+                        "config": {
+                            "system_prompt": SUPPORT_PROMPT,
+                            "description": "Answers the customer.",
+                            "rag_search": True,
+                            "max_tokens": SUPPORT_MAX_TOKENS,
+                            "guard": {
+                                "model": GUARD_MODEL,
+                                "system_prompt": GUARD_PROMPT,
+                                "reasoning_effort": REASONING,
+                            },
+                        },
+                        **stamps,
+                    },
+                    {
+                        "id": historyId,
+                        "node_type_id": historyTypeId,
+                        "name": "history",
+                        "config": {
+                            "description": "Keeps the conversation.",
+                            "summarise_after_tokens": SUMMARISE_AFTER_TOKENS,
+                        },
+                        **stamps,
+                    },
+                ],
+                "edges": [
+                    {"from": "input", "to": fastId},
+                    {"from": fastId, "to": historyId},
+                    {"from": historyId, "to": "output"},
+                ],
+                "triggers": [],
+                "is_active": True,
+                **stamps,
+            },
+        ),
+    ]
+
+
+# The agents that can be stressed, by name: the records each is made of.
+FLOWS = {
+    "guardThenSupport": agentRecordsOf,
+    "fastSupport": fastAgentRecordsOf,
+}
 
 
 def configureAgent(
@@ -322,9 +439,9 @@ def percentileOf(values: list[float], percent: int) -> float:
     return values[rank - 1]
 
 
-def timesOf(results: list[dict]) -> dict:
-    """The spread of the answered queries' times, in seconds."""
-    values = sorted(result["seconds"] for result in results)
+def spreadOf(values: list[float]) -> dict:
+    """The spread of `values`: least, average, PERCENTILES and most."""
+    values = sorted(values)
     if not values:
         return {}
     return {
@@ -335,6 +452,61 @@ def timesOf(results: list[dict]) -> dict:
             for percent in PERCENTILES
         },
         "max": values[-1],
+    }
+
+
+def timesOf(results: list[dict]) -> dict:
+    """The spread of the answered queries' times, in seconds."""
+    return spreadOf([result["seconds"] for result in results])
+
+
+def usageLogged(lines: list[str]) -> list[dict]:
+    """The tokens of each model call the server logged in `lines`."""
+    return [
+        json.loads(line.split(USAGE_PREFIX, 1)[1])
+        for line in lines
+        if USAGE_PREFIX in line
+    ]
+
+
+def costsOf(usages: list[dict], queries: int) -> dict:
+    """The tokens each model used in `usages`, and what they cost in
+    dollars by PRICES, by model; and the cost of all, and of a query."""
+    byModel: dict[str, dict] = {}
+    for usage in usages:
+        used = byModel.setdefault(
+            usage["model"],
+            {"provider": usage["provider"], "calls": 0}
+            | dict.fromkeys(TOKEN_KINDS, 0),
+        )
+        used["calls"] += 1
+        for kind in TOKEN_KINDS:
+            used[kind] += usage[kind]
+    for model, used in byModel.items():
+        prices = PRICES.get(model)
+        if prices is None:
+            used["dollars"] = None
+            continue
+        inputPrice, cachedPrice, outputPrice = prices
+        uncached = used["input"] - used["cachedInput"]
+        used["dollars"] = round(
+            (
+                uncached * inputPrice
+                + used["cachedInput"] * cachedPrice
+                + used["output"] * outputPrice
+            )
+            / 1_000_000,
+            6,
+        )
+    dollars = sum(used["dollars"] or 0 for used in byModel.values())
+    return {
+        "byModel": byModel,
+        "unpricedModels": [
+            model for model, used in byModel.items() if used["dollars"] is None
+        ],
+        "dollars": round(dollars, 6),
+        "dollarsPerQuery": round(dollars / queries, 8),
+        "dollarsPer1000Queries": round(dollars * 1000 / queries, 4),
     }
 
 
@@ -355,15 +527,17 @@ def reportOf(
     wallSeconds: float,
     searches: int,
     saved: tuple[int, float],
+    costs: dict,
     server: Server,
 ) -> dict:
-    """The run's report: what was asked, how fast it was answered, and
-    what failed."""
+    """The run's report: what was asked, how fast it was answered, what
+    it cost, and what failed."""
     answered = [result for result in results if result["status"] == 200]
     failures = [result for result in results if result["status"] != 200]
     empty = [result for result in answered if not result["answer"].strip()]
     return {
         "finishedAt": datetime.now(timezone.utc).isoformat(),
+        "flow": FLOW,
         "model": MODEL,
         "guardModel": GUARD_MODEL,
         "supportMaxTokens": SUPPORT_MAX_TOKENS,
@@ -381,6 +555,7 @@ def reportOf(
         "searchesOfTheRag": searches,
         "conversationsSaved": saved[0],
         "savedSecondsAfterTheLastReply": saved[1],
+        "costs": costs,
         "serverErrorLines": len(server.errors),
         "slowest": sorted(
             answered, key=lambda result: result["seconds"], reverse=True
@@ -406,8 +581,9 @@ def printReport(report: dict, path: Path) -> None:
     times = report["seconds"]
     spread = ", ".join(f"{name} {value:.2f}s" for name, value in times.items())
     print(
-        f"\nStress report (guard {report['guardModel']}, support "
-        f"{report['model']}, at most {report['supportMaxTokens']} tokens)\n"
+        f"\nStress report, {report['flow']} (guard {report['guardModel']}, "
+        f"support {report['model']}, at most {report['supportMaxTokens']} "
+        "tokens)\n"
         f"   queries:        {report['queries']}, {report['atOnce']} at once\n"
         f"   answered:       {report['answered']}, "
         f"{report['emptyAnswers']} of them empty\n"
@@ -423,14 +599,36 @@ def printReport(report: dict, path: Path) -> None:
         "reply\n"
         f"   server errors:  {report['serverErrorLines']} log lines"
     )
+    printCosts(report["costs"])
     for result in report["slowest"]:
         print(f"   slow: {result['seconds']:.2f}s  {result['id']}")
     for failure in report["failures"][:FAILURES_SHOWN]:
         print(
             f"   failed: {failure['status']}  {failure['id']}  "
-            f"{failure['error'][:120]}"
+            f"{failure['error'][:100]}"
         )
     print(f"Report: {path}")
+
+
+def printCosts(costs: dict) -> None:
+    """The tokens each model used, and what they cost, then the total."""
+    print("   usage and cost:")
+    for model, used in costs["byModel"].items():
+        dollars = (
+            "not priced" if used["dollars"] is None
+            else f"${used['dollars']:.6f}"
+        )
+        print(
+            f"      {model}: {used['calls']} calls, {used['input']} in "
+            f"({used['cachedInput']} cached), {used['output']} out "
+            f"({used['reasoning']} reasoning) -> {dollars}"
+        )
+    print(
+        f"      total ${costs['dollars']:.6f}: "
+        f"${costs['dollarsPerQuery']:.8f} a query, "
+        f"${costs['dollarsPer1000Queries']:.4f} per 1000 queries "
+        "(Pinecone not counted)"
+    )
 
 
 def countConversations(
@@ -507,7 +705,7 @@ class TestAgentStress:
             )
             checkLog(server, "search warm-up")
 
-            records = agentRecordsOf(dummy)
+            records = FLOWS[FLOW](dummy)
             writeRecords(firestoreClient, records)
             templateId = records[-1][1]["_id"]
             agentId = configureAgent(client, dummy, templateId)
@@ -526,7 +724,11 @@ class TestAgentStress:
             checkLog(server, "warm-up")
 
             searchesBefore = searchesLogged(server, ragId)
-            print(f"   asking {QUERY_COUNT} questions, {AT_ONCE} at once")
+            linesBefore = server.lineCount
+            print(
+                f"   asking {QUERY_COUNT} questions of {FLOW}, {AT_ONCE} "
+                "at once"
+            )
             results, wallSeconds = asyncio.run(
                 askAll(server.baseUrl, path, rows)
             )
@@ -536,6 +738,10 @@ class TestAgentStress:
                 firestoreClient, agentId, QUERY_COUNT + 1
             )
             searches = searchesLogged(server, ragId) - searchesBefore
+            lines = server.logPath.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines()[linesBefore:]
+            costs = costsOf(usageLogged(lines), QUERY_COUNT)
             deleteConversations(firestoreClient, agentId)
             report = reportOf(
                 rag,
@@ -544,6 +750,7 @@ class TestAgentStress:
                 wallSeconds,
                 searches,
                 (savedConversations, savedSeconds),
+                costs,
                 server,
             )
             printReport(report, saveReport(report))

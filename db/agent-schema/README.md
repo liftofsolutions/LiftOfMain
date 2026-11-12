@@ -213,21 +213,29 @@ needs - DeepSeek's thinking mode refuses the forced tool call a pick is made wit
 
 An `agent_memory` document's id is `{agent_id}_{convo_id}`, so a conversation is one agent's alone.
 
-**Inbound webhook.** Each trigger has its own URL:
+**Inbound webhook.** An agent's webhook is its query URL, the provider named - one URL for every provider, so
+none is made for a trigger:
 
 ```
-POST /hooks/{projectId}/{agentId}/{triggerId}
+GET  /agents/{projectId}/{agentId}/query?provider=whatsapp   the provider's check of the webhook
+POST /agents/{projectId}/{agentId}/query?provider=whatsapp   the provider's event
 ```
 
-1. Read the agent by id; it must belong to `projectId`, be `active` and not deleted.
-2. Read its template (cache by id).
-3. Find the trigger by id (enabled) and its node, in memory.
-4. Load the node's credential (same project) and verify the provider's signature
-   (`X-Hub-Signature-256` for WhatsApp, `X-Line-Signature` for LINE, …).
-5. Acknowledge with 200 and process.
+1. Build the agent (or use the one kept); it must belong to `projectId`, be `active` and not deleted.
+2. Find its io nodes of the provider: the nodes an enabled trigger points to, whose node type's `handler` is the
+   provider's. None - or no agent - is `404 Page not found.`, alike.
+3. Build each with its merged config, its secrets in its `Credential`, and hand it the call: the node does all
+   the provider's own work. A `whatsapp` node answers the check with `hub.challenge`, given its `verify_token`;
+   checks an event's `X-Hub-Signature-256` with its `app_secret`; and reads the text messages sent to its
+   `phone_number_id`. A call failing every node's check is `403`.
+4. Acknowledge an event with `200 {"status": "accepted", "messages": n}` at once; the agent answers each message
+   in the background, in its sender's conversation with that node, and the node sends the answer back
+   (`access_token`, Graph API `api_version`).
 
-The URL is not a secret; the signature check is the authentication. WhatsApp supports a callback URL per phone
-number through webhook overrides; LINE and email routes are configured per channel or address.
+The URL is not a secret; the signature check is the authentication. For now a `whatsapp` node keeps its
+secrets - `access_token`, `app_secret`, `verify_token` - in its config, moved into its credential as it is
+built, and never logged; they move to `credentials` once that collection is built. LINE and email are nodes of
+their own, on the same URL.
 
 **Cron.** One scheduler job per `schedule` trigger calls the same URL on the node's `config.cron`.
 

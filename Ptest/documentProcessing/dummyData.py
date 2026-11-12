@@ -88,13 +88,16 @@ def newId() -> str:
     return str(uuid.uuid4())
 
 
-def createDummyData(client: firestore.Client) -> DummyData:
-    """Write a dummy account, its project, the owner role and membership.
+def createDummyData(
+    client: firestore.Client, projectId: str | None = None
+) -> DummyData:
+    """Write a dummy account, its project, the owner role and membership:
+    the project under `projectId`, if given, else a new id.
 
     The records follow `db/user-schema` and `db/project-schema`, and are
     written in one batch, so either all of them land or none.
     """
-    dummy = DummyData(newId(), newId(), newId())
+    dummy = DummyData(newId(), projectId or newId(), newId())
     now = utcNow()
     records = [
         (

@@ -24,3 +24,12 @@ keys/
 
 # Ptest run reports and server logs
 Ptest/results/
+
+# Scripts and their state, for trying things by hand
+tempScripts/
+
+# Playground scripts and their audio files
+sandbox/
+
+# Btest load reports
+Btest/results/

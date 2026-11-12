@@ -2,7 +2,7 @@
 one question, with where its time went.
 
 The rag and the setup are `AgentStressTest`'s, over HTTP to the server
-as its own process. The two agents, FLOWS:
+as its own process. The two agents, its FLOWS:
 
 * `guardThenSupport` - the stress test's agent, its guard, then support
   searching the rag:
@@ -33,7 +33,7 @@ Then, for each agent, in order:
 
 Both timings are saved to `Ptest/results/`, and everything made is
 deleted. The test fails if a query is not answered, or answered empty,
-or the server logs an error. A run spends a few DeepSeek and OpenAI
+or the server logs an error. A run spends a few OpenAI
 calls, and writes to the Firestore and Pinecone that `test.env` names:
 
     uv run pytest Ptest/agents/AgentSingleQueryTimingTest.py -s
@@ -54,13 +54,8 @@ PTEST_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PTEST_ROOT / "documentProcessing"))
 
 from AgentConversationTest import (  # noqa: E402, F401
-    AGENT_TEMPLATES,
     AGENTS,
-    GUARD_PROMPT,
     MODEL,
-    NODE_TYPES,
-    SUMMARISE_AFTER_TOKENS,
-    SUPPORT_PROMPT,
     deleteRecords,
     firestoreClient,
     newId,
@@ -68,9 +63,9 @@ from AgentConversationTest import (  # noqa: E402, F401
     writeRecords,
 )
 from AgentStressTest import (  # noqa: E402
+    FLOWS,
     GUARD_MODEL,
     SUPPORT_MAX_TOKENS,
-    agentRecordsOf,
     configureAgent,
     configureRag,
     deleteConversations,
@@ -103,95 +98,6 @@ QUERY_SECONDS = 300
 LOG_STAMP_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
 # The most of a log record's text printed in the timeline.
 TIMELINE_TEXT_LENGTH = 110
-
-
-def fastAgentRecordsOf(dummy: DummyData) -> list[tuple[str, dict]]:
-    """The fast support agent's template and its two node types, of the
-    dummy project, each with its collection, as they are written by
-    hand: the template last."""
-    now = datetime.now(timezone.utc)
-    stamps = {"created_at": now, "updated_at": now}
-    fastTypeId, historyTypeId, templateId = newId(), newId(), newId()
-    fastId, historyId = newId(), newId()
-    return [
-        (
-            NODE_TYPES,
-            {
-                "_id": fastTypeId,
-                "project_id": dummy.projectId,
-                "category": "chat_model",
-                "handler": "fast_support_chat",
-                "name": "Timing fast support",
-                "config": {"model": MODEL},
-                "is_active": True,
-                **stamps,
-            },
-        ),
-        (
-            NODE_TYPES,
-            {
-                "_id": historyTypeId,
-                "project_id": dummy.projectId,
-                "category": "memory",
-                "handler": "chat_history",
-                "name": "Timing chat history",
-                "config": {"provider": "openai", "model": MODEL},
-                "is_active": True,
-                **stamps,
-            },
-        ),
-        (
-            AGENT_TEMPLATES,
-            {
-                "_id": templateId,
-                "project_id": dummy.projectId,
-                "name": "Timing fast customer support",
-                "nodes": [
-                    {
-                        "id": fastId,
-                        "node_type_id": fastTypeId,
-                        "name": "fastSupport",
-                        "config": {
-                            "system_prompt": SUPPORT_PROMPT,
-                            "description": "Answers the customer.",
-                            "rag_search": True,
-                            "max_tokens": SUPPORT_MAX_TOKENS,
-                            "guard": {
-                                "model": GUARD_MODEL,
-                                "system_prompt": GUARD_PROMPT,
-                            },
-                        },
-                        **stamps,
-                    },
-                    {
-                        "id": historyId,
-                        "node_type_id": historyTypeId,
-                        "name": "history",
-                        "config": {
-                            "description": "Keeps the conversation.",
-                            "summarise_after_tokens": SUMMARISE_AFTER_TOKENS,
-                        },
-                        **stamps,
-                    },
-                ],
-                "edges": [
-                    {"from": "input", "to": fastId},
-                    {"from": fastId, "to": historyId},
-                    {"from": historyId, "to": "output"},
-                ],
-                "triggers": [],
-                "is_active": True,
-                **stamps,
-            },
-        ),
-    ]
-
-
-# The agents timed, by name: the records each is made of.
-FLOWS = {
-    "guardThenSupport": agentRecordsOf,
-    "fastSupport": fastAgentRecordsOf,
-}
 
 
 def askTimed(

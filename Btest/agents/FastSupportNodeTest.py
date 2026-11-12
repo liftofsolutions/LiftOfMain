@@ -15,7 +15,7 @@ the chat history node, LangGraph and `searchRag`.
    again. The guard is sent its own prompt, and the message.
 3. A message turned away goes out with the guard's message; support is
    not asked, and the turn is kept.
-4. The guard runs on DeepSeek with its thinking off; a node with no
+4. The guard runs on OpenAI, at the reasoning its config says; a node with no
    guard is not built; and a released node holds no model.
 
     uv run pytest Btest/agents -q
@@ -67,7 +67,7 @@ from LLM import agentChatModel
 
 FAST_TYPE_ID = "c4a9e2b7-1d6f-4b3a-8e5c-7f2d9a0b6e14"
 HISTORY_TYPE_ID = "b5e1c7d2-4a3f-4e8b-9c6d-2f7a1e0b3d58"
-GUARD_MODEL = "deepseek-v4-flash"
+GUARD_MODEL = "gpt-6-luna"
 
 FAST_EDGES = [
     {"from": INPUT_NODE_ID, "to": "fast"},
@@ -97,7 +97,11 @@ def buildFastTemplate(**fastConfig) -> dict:
         "system_prompt": SUPPORT_PROMPT,
         "description": "Answers the customer.",
         "rag_search": True,
-        "guard": {"model": GUARD_MODEL, "system_prompt": GUARD_PROMPT},
+        "guard": {
+            "model": GUARD_MODEL,
+            "system_prompt": GUARD_PROMPT,
+            "reasoning_effort": "none",
+        },
     }
     config.update(fastConfig)
     return buildTemplate(
@@ -170,7 +174,7 @@ def builds(monkeypatch) -> list[tuple[str, dict]]:
         return MeetingModel()
 
     serverConfig = ServerConfig(
-        llmApiKeys={"openai": "platform-test-key", "deepseek": "test-key"}
+        llmApiKeys={"openai": "platform-test-key"}
     )
     monkeypatch.setattr(
         agentChatModel, "getServerConfig", lambda: serverConfig
@@ -307,7 +311,7 @@ class TestAnswer:
 class TestBuilt:
     """The guard's model, a node with no guard, and a released node."""
 
-    def testGuardRunsOnDeepSeekWithItsThinkingOff(
+    def testGuardRunsOnOpenAIAtItsConfigsReasoning(
         self, fastManager, builds
     ):
         fastNodeOf(fastManager)
@@ -315,10 +319,8 @@ class TestBuilt:
         [guardSettings] = [
             settings for model, settings in builds if model == GUARD_MODEL
         ]
-        assert guardSettings["model_provider"] == "deepseek"
-        assert guardSettings["extra_body"] == {
-            "thinking": {"type": "disabled"}
-        }
+        assert guardSettings["model_provider"] == "openai"
+        assert guardSettings["reasoning_effort"] == "none"
 
     def testNodeWithNoGuardIsNotBuilt(self, fastManager, firestore):
         template = buildFastTemplate()

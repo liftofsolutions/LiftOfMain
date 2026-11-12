@@ -33,7 +33,8 @@ one - and answers with what the run goes out with. Queries at once share
 the graph, and the nodes in it. The nodes stay reserved while the agent
 is kept: `release` hands them back to the node manager - at once, or
 once its last running query is answered - which wipes their credentials
-and config.
+and config. Each run is handed `LLM.USAGE_LOG`, which logs the tokens of
+every chat model call made in it.
 
 What nodes keep
 ---------------
@@ -160,6 +161,7 @@ from agents.nodes import (
     OutputNode,
 )
 from agents.nodes.chatModelNode import PICK_LIMITS
+from LLM import USAGE_LOG
 
 LOGGER = logging.getLogger(__name__)
 
@@ -610,7 +612,8 @@ class Agent:
                     "inputMessage": message,
                     "chatHistory": chatHistory,
                     "nodeDetails": {},
-                }
+                },
+                config={"callbacks": [USAGE_LOG]},
             )
         except GraphRecursionError as error:
             raise AgentNotRunnableError(
