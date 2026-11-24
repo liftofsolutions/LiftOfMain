@@ -19,7 +19,7 @@ MongoDB-style documents; works on Firestore today.
 |---|---|---|
 | `node_types` | Platform, or one project | Reusable node templates: category, handler, default config |
 | `agent_templates` | Platform, or one project | An agent's structure: embedded `nodes[]`, `edges[]` and `triggers[]` |
-| `agents` | One project | The running agent: which template, name, status; `rag_enabled`, with the `rag_id` of its knowledge base |
+| `agents` | One project | The running agent: which template, name, status, optional descriptive `metadata`; `rag_enabled`, with the `rag_id` of its knowledge base |
 | `credentials` | One project | Keys and account details a node uses; secrets encrypted |
 | `agent_memory` | One agent | A conversation's chat history: whatever the agent's nodes keep of it, as a plain object |
 
@@ -53,7 +53,7 @@ nodes           1 ── 0..N  triggers
 
 | category | Examples (`handler`) | Role |
 |---|---|---|
-| `chat_model` | `anthropic_chat`, `openai_chat`, `gemini_chat` | The model; `config` holds model, temperature, `system_prompt` |
+| `chat_model` | `anthropic_chat`, `openai_chat`, `gemini_chat` | The model; `config` holds model, temperature, `system_prompt` (a base prompt, `{{persona}}` and the agent's other details filled in) |
 | `tool` | `tavily_search`, `http_api` | Called by the model while processing |
 | `io` | `whatsapp`, `email`, `line`, `cron` | Receives events (via triggers) and sends messages |
 | `memory` | `chat_history` | Keeps the conversation's chat history, summarised once it grows long |
@@ -164,6 +164,12 @@ with their merged config, compiles them into a LangGraph graph, and keeps it for
 copied into the project first; the agent is `active`, `created_by` the account. The body may also give the
 agent a `description`, and `nodes`, the credentials its nodes are formed with:
 `[{"nodeId": "<a node of the template>", "credentialId": "<a credential of the project>"}]`, each node once.
+It may also include a `metadata` object with `persona`, `businessName`, `serviceTone`, `primaryObjective`,
+`secondaryObjective`, and `marketResearchObjective`, stored on the agent and returned. A chat model's
+`system_prompt` is a base prompt: it names them in double braces - `{{persona}}`, `{{businessName}}` - with
+the agent's `{{name}}` and `{{description}}`, and as the agent is built each is replaced, by a regex, with the
+agent's own; one the agent has no text for is left empty, and logged. So one template's prompt is each of its
+agents' own.
 With any, the agent runs a copy of the template of its own, those nodes holding their `credential_id` (rule 2),
 so the template it was made from, and its other agents, are left as they were. The answer lists the nodes of the
 template the agent runs, each with its credential, if any. `POST

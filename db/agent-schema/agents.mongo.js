@@ -100,6 +100,17 @@ const agentsValidator = {
       project_id: uuid,  // FK → projects._id
       template_id: uuid, // FK → agent_templates._id
       name: { bsonType: "string", minLength: 1, maxLength: 120 },
+      metadata: {
+        bsonType: "object",
+        properties: {
+          persona: { bsonType: "string" },
+          businessName: { bsonType: "string" },
+          serviceTone: { bsonType: "string" },
+          primaryObjective: { bsonType: "string" },
+          secondaryObjective: { bsonType: "string" },
+          marketResearchObjective: { bsonType: "string" },
+        },
+      },
       status: { enum: ["active", "paused"] },
       rag_enabled: { bsonType: "bool" },
       rag_id: uuid, // FK → rags._id (Knowledge schema)

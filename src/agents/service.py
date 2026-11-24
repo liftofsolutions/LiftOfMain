@@ -111,11 +111,12 @@ async def configureAgent(
     templateId: str,
     description: str | None = None,
     nodeCredentials: dict[str, str] | None = None,
+    metadata: dict | None = None,
 ) -> dict:
     """A new agent of `projectId`, named `name`, running the template
     `templateId`, made by `accountUuid`, a member of the project; with
-    its `description`, and `nodeCredentials` - credential ids by node
-    id - the credentials its nodes are formed with.
+    its `description` and metadata, and `nodeCredentials` - credential
+    ids by node id - the credentials its nodes are formed with.
 
     A premade platform template is copied into the project, under a new
     id, and the agent runs the copy; so is a template whose nodes are
@@ -167,6 +168,7 @@ async def configureAgent(
         "template_id": templateId,
         "name": name,
         **({} if description is None else {"description": description}),
+        **({} if metadata is None else {"metadata": metadata}),
         "status": AGENT_STATUS_ACTIVE,
         "created_by": accountUuid,
         "created_at": now,
@@ -181,6 +183,7 @@ async def configureAgent(
         "templateId": templateId,
         "name": name,
         "description": description,
+        **({} if metadata is None else {"metadata": metadata}),
         "status": AGENT_STATUS_ACTIVE,
         "nodes": [
             {

@@ -21,7 +21,12 @@ config picks:
   raises `KeyError` as the node is reserved, so no node type can run a
   model not listed there.
 * `system_prompt` - optional; the `chatAgent` prompt in
-  `systemPrompt.json` when it is not set.
+  `systemPrompt.json` when it is not set. Either is a base prompt:
+  it may name the agent's details in double braces - `{{persona}}`,
+  `{{businessName}}`, `{{name}}` - each filled in, as the node is
+  configured, with the agent's own, which the agent hands the node
+  in `agent`; see `agents.nodes.promptTemplate`. One the agent has
+  no text for is left empty, and logged.
 * `temperature`, `max_tokens` - optional; they replace the model's own
   settings from `configLLM.json`. OpenAI's gpt-5 models take only their
   default temperature, so LangChain drops any other. A reasoning model
@@ -70,6 +75,7 @@ there - a reviewer that has sent a reply back as often as it may passes
 the next one unread.
 """
 
+import logging
 import math
 from typing import ClassVar, Literal
 
@@ -85,9 +91,12 @@ from pydantic import BaseModel, Field, create_model
 from agents.nodes.chatHistoryNode import historyMessagesOf, summaryOf
 from agents.nodes.credential import Credential
 from agents.nodes.nodeBase import NodeBase
+from agents.nodes.promptTemplate import AGENT_DETAILS, fillPrompt
 from agents.nodes.specialNodes import awaitChatHistory
 from documentProcessing.service import searchRag
 from LLM import ChatModel, buildChatModel
+
+LOGGER = logging.getLogger(__name__)
 
 # The role whose system prompt is used when a node's config has none.
 DEFAULT_ROLE = "chatAgent"
@@ -170,13 +179,16 @@ class ChatModelNode(NodeBase):
         until it is configured."""
         super().__init__(nodeId, name)
         self.chatModel: ChatModel | None = None
+        # Its system prompt, filled in with the agent's details.
+        self.systemPrompt: str | None = None
 
     def configure(
         self,
         credential: Credential | None = None,
         config: dict | None = None,
     ) -> None:
-        """Take the config, then build the chat model it picks.
+        """Take the config, build the chat model it picks, and fill
+        its system prompt in with the agent's details.
 
         Raises:
             KeyError: If the config names no model, or one `configLLM.json`
@@ -192,6 +204,25 @@ class ChatModelNode(NodeBase):
         self.chatModel = buildChatModel(
             DEFAULT_ROLE, self.provider, self.config["model"], overrides
         )
+        self.systemPrompt = self.filledPrompt(
+            self.config.get("system_prompt") or self.chatModel.systemPrompt
+        )
+
+    def filledPrompt(self, prompt: str) -> str:
+        """`prompt`, its placeholders filled in with the agent's
+        details, as the config holds them; one the agent has no text
+        for left empty, and logged."""
+        filled, missing = fillPrompt(
+            prompt, self.config.get(AGENT_DETAILS, {})
+        )
+        if missing:
+            LOGGER.warning(
+                "The prompt of node %r names %s, which its agent has "
+                "no text for: left empty.",
+                self.name,
+                ", ".join(missing),
+            )
+        return filled
 
     def reasoningOverrides(self) -> dict:
         """The model's settings for how much it reasons, as the config
@@ -201,8 +232,10 @@ class ChatModelNode(NodeBase):
         return {self.reasoningSetting: self.config[self.reasoningSetting]}
 
     def deconfigure(self) -> None:
-        """Delete the chat model, then the credential and config."""
+        """Delete the chat model and its prompt, then the credential
+        and config."""
         self.chatModel = None
+        self.systemPrompt = None
         super().deconfigure()
 
     async def __call__(self, state: dict) -> dict:
@@ -271,9 +304,7 @@ class ChatModelNode(NodeBase):
         `state` - once the history is loaded."""
         await awaitChatHistory()
         chatHistory = state.get("chatHistory", {})
-        systemPrompt = (
-            self.config.get("system_prompt") or self.chatModel.systemPrompt
-        )
+        systemPrompt = self.systemPrompt
         summary = summaryOf(chatHistory)
         if summary:
             systemPrompt = f"{systemPrompt}\n\n{SUMMARY_ABOUT}\n{summary}"

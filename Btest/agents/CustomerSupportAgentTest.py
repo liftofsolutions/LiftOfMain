@@ -836,3 +836,70 @@ class TestNotBuilt:
             "rag_id": RAG_ID,
         }
         assert "rag" not in configs["review"]
+
+
+# The agent's metadata, its record's, as the configure route keeps it.
+METADATA = {
+    "persona": "Alex, a customer support representative",
+    "businessName": "Acme",
+    "serviceTone": "Polite and very courteous",
+}
+
+
+class TestAgentDetails:
+    """Each node's prompt, filled in with its agent's own details."""
+
+    def testEachPromptIsFilledWithTheAgentsDetails(
+        self, supportManager, firestore
+    ):
+        firestore.put(
+            AGENTS,
+            buildAgent(
+                rag_enabled=True,
+                rag_id=RAG_ID,
+                description="Answers Acme's delivery questions.",
+                metadata=METADATA,
+            ),
+        )
+        nodes = buildSupportNodes(
+            guard={"system_prompt": "Guard {{businessName}}'s chat."},
+            support={
+                "system_prompt": (
+                    "You are {{persona}}, of {{businessName}}, as {{name}}: "
+                    "{{description}} Tone: {{serviceTone}}."
+                )
+            },
+        )
+        firestore.put(
+            AGENT_TEMPLATES, buildSupportTemplate() | {"nodes": nodes}
+        )
+
+        _, models = ask(supportManager, passedAndAnswered())
+
+        prompts = {
+            nodeId: model.received[0][0].text
+            for nodeId, model in models.items()
+            if model.received
+        }
+        assert prompts["guard"] == "Guard Acme's chat."
+        assert prompts["support"] == (
+            "You are Alex, a customer support representative, of Acme, as "
+            "Acme Sales Bot: Answers Acme's delivery questions. Tone: "
+            "Polite and very courteous."
+        )
+        assert prompts["review"] == REVIEW_PROMPT
+
+    def testTheDetailsAreTheAgentsNeverTheTemplates(
+        self, supportManager, firestore
+    ):
+        firestore.put(AGENTS, buildAgent(rag_enabled=True, rag_id=RAG_ID))
+        sneaked = {"persona": "Someone else", "name": "Not this agent"}
+        nodes = buildSupportNodes(support={"agent": sneaked})
+        firestore.put(
+            AGENT_TEMPLATES, buildSupportTemplate() | {"nodes": nodes}
+        )
+
+        agent = asyncio.run(supportManager.getAgent(PROJECT_ID, AGENT_ID))
+
+        for node in agent.nodes:
+            assert node.config["agent"] == {"name": "Acme Sales Bot"}

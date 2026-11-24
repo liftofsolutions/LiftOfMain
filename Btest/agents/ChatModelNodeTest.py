@@ -16,7 +16,9 @@ Every node is reserved as the example template's reply node.
    reserved, leaving the node deconfigured and free.
 3. A call sends the system prompt, then the conversation, and adds the
    answer to `messages`; with no prompt in the config, the `chatAgent`
-   prompt is sent.
+   prompt is sent. A base prompt's placeholders are filled in with the
+   agent's details the config holds; one the agent lacks is left
+   empty, and logged.
 4. Choosing sends the same, and has the model answer in a shape: its
    answer, and the id of one of the choices - each read with what it is
    - and no other.
@@ -28,6 +30,7 @@ Every node is reserved as the example template's reply node.
 """
 
 import asyncio
+import logging
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -52,6 +55,18 @@ REPLY_NODE_ID = "473b3fd6-5886-40fc-bd5a-a5d414591bf2"
 QUESTION = "Do you deliver to Pune?"
 ANSWER = "Yes, we deliver to Pune in 2-3 business days."
 SYSTEM_PROMPT = "You are Acme's sales assistant. Answer briefly."
+# A template's base prompt, and the agent details it is filled in with.
+BASE_PROMPT = (
+    "You are {{persona}}, of {{businessName}}. Be {{ serviceTone }}. "
+    "Your goal: {{primaryObjective}}."
+)
+AGENT_DETAILS = {
+    "name": "Acme Sales Bot",
+    "persona": "Alex, a support representative",
+    "businessName": "Acme",
+    "serviceTone": "polite and very courteous",
+    "primaryObjective": "help customers resolve their needs",
+}
 PLATFORM_KEYS = {"openai": "platform-openai-key"}
 
 HANDLER_CASES = [
@@ -76,6 +91,7 @@ RELEASED_NODE = {
     "_credential": None,
     "config": {},
     "chatModel": None,
+    "systemPrompt": None,
 }
 
 
@@ -372,6 +388,47 @@ class TestCall:
         assert systemMessage.content.startswith(
             "You are a helpful assistant that answers from the context."
         )
+
+    def testBasePromptIsFilledWithTheAgentsDetails(self, builtModels):
+        node = reserveReply(
+            NodeManager(),
+            system_prompt=BASE_PROMPT,
+            agent=AGENT_DETAILS,
+        )
+
+        asyncio.run(node(buildState()))
+
+        [model] = builtModels
+        assert model.received[0][0] == SystemMessage(
+            "You are Alex, a support representative, of Acme. Be "
+            "polite and very courteous. Your goal: help customers "
+            "resolve their needs."
+        )
+
+    def testDetailTheAgentLacksIsLeftEmptyAndLogged(
+        self, builtModels, caplog
+    ):
+        details = {
+            key: value
+            for key, value in AGENT_DETAILS.items()
+            if key != "serviceTone"
+        }
+
+        with caplog.at_level(logging.WARNING):
+            node = reserveReply(
+                NodeManager(), system_prompt=BASE_PROMPT, agent=details
+            )
+
+        assert "Be . Your goal" in node.systemPrompt
+        assert "serviceTone" in caplog.text
+
+    def testAPromptWithNoPlaceholdersIsSentAsItIs(self, builtModels):
+        node = reserveReply(NodeManager(), agent=AGENT_DETAILS)
+
+        asyncio.run(node(buildState()))
+
+        [model] = builtModels
+        assert model.received[0][0] == SystemMessage(SYSTEM_PROMPT)
 
 
 class TestChoice:

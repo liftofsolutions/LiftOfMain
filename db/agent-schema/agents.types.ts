@@ -148,6 +148,14 @@ export interface Agent {
   template_id: string;    // FK → agent_templates._id, same project
   name: string;
   description?: string;   // what the agent is for
+  metadata?: {
+    persona?: string;                 // e.g. "Alex, a customer support representative"
+    businessName?: string;            // e.g. "NVIDIA"
+    serviceTone?: string;             // e.g. "Polite and very courteous"
+    primaryObjective?: string;        // e.g. "Help customers resolve their needs"
+    secondaryObjective?: string;      // e.g. "Mention Product 1 when relevant"
+    marketResearchObjective?: string; // e.g. "Learn about customer preferences and related product interest"
+  };
   status: AgentStatus;
   rag_enabled?: boolean;  // its nodes with rag_search search rag_id
   rag_id?: string;        // FK → rags._id, same project; required when rag_enabled

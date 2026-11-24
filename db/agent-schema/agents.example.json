@@ -336,6 +336,14 @@
     "project_id": "a7c3e2f1-9b4d-4e6a-8c2f-5d1b0e9a7f34",
     "template_id": "8f32ea63-10e7-4105-a05d-ea0c7c02ff52",
     "name": "Acme Sales Bot",
+    "metadata": {
+      "persona": "Alex, a customer support representative",
+      "businessName": "Acme",
+      "serviceTone": "Polite and very courteous",
+      "primaryObjective": "Help customers resolve their needs",
+      "secondaryObjective": "Mention Product 1 when it is relevant to the conversation",
+      "marketResearchObjective": "Learn about customer preferences and related product interest"
+    },
     "status": "active",
     "rag_enabled": true,
     "rag_id": "3700255f-a07c-4820-86eb-ba61fb732f77",

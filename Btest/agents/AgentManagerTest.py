@@ -869,6 +869,7 @@ class TestLoading:
             "temperature": 0.3,
             "max_tokens": 1024,
             "system_prompt": SYSTEM_PROMPT,
+            "agent": {"name": "Acme Sales Bot"},
         }
         edges = agent.graph.get_graph().edges
         assert {(edge.source, edge.target) for edge in edges} == {

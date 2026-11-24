@@ -70,6 +70,7 @@ class FastSupportNode(OpenAIChatNode):
         it is configured."""
         super().__init__(nodeId, name)
         self.guardModel: ChatModel | None = None
+        self.guardPrompt: str | None = None
 
     def configure(
         self,
@@ -79,8 +80,8 @@ class FastSupportNode(OpenAIChatNode):
         """Build the support model, then the guard's.
 
         Raises:
-            KeyError: If the config names no guard, or a model
-                `configLLM.json` does not list.
+            KeyError: If the config names no guard, or no prompt of
+                its, or a model `configLLM.json` does not list.
         """
         super().configure(credential, config)
         guard = self.config["guard"]
@@ -92,10 +93,12 @@ class FastSupportNode(OpenAIChatNode):
         self.guardModel = buildChatModel(
             DEFAULT_ROLE, GUARD_PROVIDER, guard["model"], settings
         )
+        self.guardPrompt = self.filledPrompt(guard["system_prompt"])
 
     def deconfigure(self) -> None:
-        """Delete the guard's model, then the rest."""
+        """Delete the guard's model and prompt, then the rest."""
         self.guardModel = None
+        self.guardPrompt = None
         super().deconfigure()
 
     async def __call__(self, state: dict) -> dict:
@@ -136,7 +139,7 @@ class FastSupportNode(OpenAIChatNode):
         loaded."""
         await awaitChatHistory()
         chatHistory = state.get("chatHistory", {})
-        systemPrompt = self.config["guard"]["system_prompt"]
+        systemPrompt = self.guardPrompt
         summary = summaryOf(chatHistory)
         if summary:
             systemPrompt = f"{systemPrompt}\n\n{SUMMARY_ABOUT}\n{summary}"

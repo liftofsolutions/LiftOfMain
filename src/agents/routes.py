@@ -4,8 +4,8 @@ An agent is configured by a member of its project, so those endpoints
 are scoped to an account and a project, as the rag endpoints are:
 
     POST /agents/{accountUuid}/{projectId}                 make an agent
-        of a template: its name, description, and the credentials its
-        nodes are formed with, by node id
+        of a template: its name, description, metadata, and the
+        credentials its nodes are formed with, by node id
     POST /agents/{accountUuid}/{projectId}/{agentId}/rag   give it a rag
 
 An agent is for public use, so it is asked under its project, with no
@@ -164,6 +164,11 @@ async def configureAgent(
                 node.nodeId: str(node.credentialId)
                 for node in agentConfig.nodes
             },
+            metadata=(
+                None
+                if agentConfig.metadata is None
+                else agentConfig.metadata.model_dump(exclude_none=True)
+            ),
         )
     except Exception:
         LOGGER.exception(

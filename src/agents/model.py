@@ -16,13 +16,32 @@ class AgentNodeRequest(BaseModel):
     )
 
 
+class AgentMetadata(BaseModel):
+    """Who the agent is, and what it is after: each a text its chat
+    models' base prompts may name in double braces, `{{persona}}`,
+    filled in with it as the agent is built."""
+
+    persona: str | None = None
+    businessName: str | None = None
+    serviceTone: str | None = None
+    primaryObjective: str | None = None
+    secondaryObjective: str | None = None
+    marketResearchObjective: str | None = None
+
+
 class ConfigureAgentRequest(BaseModel):
-    """The new agent's name and description, the template it runs, and
-    the credentials its nodes are formed with."""
+    """The new agent's details, the template it runs, and its credentials."""
 
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(
         default=None, max_length=500, description="What the agent is for."
+    )
+    metadata: AgentMetadata | None = Field(
+        default=None,
+        description=(
+            "Who the agent is: its chat models' prompts name these "
+            "as {{persona}}, {{businessName}} and so on."
+        ),
     )
     templateId: UUID = Field(
         description=(
@@ -64,6 +83,7 @@ class ConfigureAgentResponse(BaseModel):
     templateId: str
     name: str
     description: str | None
+    metadata: AgentMetadata | None = None
     status: str
     nodes: list[AgentNodeResponse]
 

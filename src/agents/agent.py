@@ -7,9 +7,10 @@ template wires them into, which answers its queries.
     del agent    # destroyed with its nodes, once nothing holds it
 
 An `Agent` holds who it is - agentId, name, projectId and templateId,
-from its record in `agents`, and its knowledge base, the record's
-`rag_id` when `rag_enabled` - and the node manager it reserves its nodes
-from. `build` readies it to run, once:
+from its record in `agents`, its description and metadata, and its
+knowledge base, the record's `rag_id` when `rag_enabled` - and the
+node manager it reserves its nodes from. `build` readies it to run,
+once:
 
 1. It fetches its template from `agent_templates`, and parses the graph
    in it - below - checking all of it before anything is reserved.
@@ -21,6 +22,10 @@ from. `build` readies it to run, once:
    key, which the node manager's chat model nodes hold. A node whose
    config has `rag_search` is handed the agent's rag, in `rag`, to
    search: so two agents of one template may each search their own.
+   Every node is handed the agent's details, `detailsOf`, in `agent`
+   - never a template's own - and a chat model fills the placeholders
+   of its base prompt with them: `{{persona}}` becomes the agent's.
+   A copy, not the agent, so no node holds it alive.
 4. It builds the LangGraph graph of them, wired as the template says,
    and keeps it compiled, in `graph`.
 
@@ -176,6 +181,7 @@ from agents.nodes import (
     OutputNode,
 )
 from agents.nodes.chatModelNode import PICK_LIMITS
+from agents.nodes.promptTemplate import AGENT_DETAILS
 from LLM import USAGE_LOG
 
 LOGGER = logging.getLogger(__name__)
@@ -463,15 +469,20 @@ class Agent:
         templateId: str,
         nodeManager: NodeManager,
         ragId: str | None = None,
+        description: str | None = None,
+        metadata: dict | None = None,
     ) -> None:
         """An agent not built yet: who it is, the node manager it reserves
-        its nodes from, and the rag its nodes search, if it has one."""
+        its nodes from, the rag its nodes search, if it has one, and
+        what it is for and like: its description and metadata."""
         self.agentId = agentId
         self.name = name
         self.projectId = projectId
         self.templateId = templateId
         self.nodeManager = nodeManager
         self.ragId = ragId
+        self.description = description
+        self.metadata = dict(metadata or {})
         # Its reserved nodes, and the graph built of them.
         self.nodes: list[NodeBase] = []
         self.graph: CompiledStateGraph | None = None
@@ -526,6 +537,20 @@ class Agent:
             raise
         self.triggerIds = availableTriggersOf(template)
         LOGGER.info("Built %s.", self)
+
+    def detailsOf(self) -> dict[str, str]:
+        """What its nodes' prompts may name of the agent, by key: each
+        text of its metadata - `persona`, `businessName` and the rest -
+        then its own `name` and `description`."""
+        details = {
+            key: value
+            for key, value in self.metadata.items()
+            if isinstance(value, str)
+        }
+        details["name"] = self.name
+        if self.description:
+            details["description"] = self.description
+        return details
 
     def isTriggerAvailable(self, triggerId: str) -> bool:
         """Whether the trigger `triggerId` can start the agent: its
@@ -716,8 +741,9 @@ class Agent:
 
     def _configOf(self, node: dict, nodeType: dict) -> dict:
         """The config the node runs with: its own, merged over its type's;
-        and, if it has `rag_search`, the agent's rag, in `rag`, as no
-        config but the agent's names it.
+        the agent's details, in AGENT_DETAILS; and, if it has
+        `rag_search`, the agent's rag, in `rag`: as no config but the
+        agent's names either.
 
         Raises:
             AgentNotRunnableError: If the node searches a rag, and the
@@ -725,6 +751,7 @@ class Agent:
         """
         config = mergeConfig(nodeType.get("config", {}), node.get("config", {}))
         config.pop("rag", None)
+        config[AGENT_DETAILS] = self.detailsOf()
         if config.get("rag_search"):
             if self.ragId is None:
                 raise AgentNotRunnableError(
@@ -779,6 +806,7 @@ async def loadAgent(
         raise AgentNotRunnableError(
             f"Agent {agentId!r} is {status}; only an active agent runs."
         )
+    metadata = record.get("metadata")
     agent = Agent(
         agentId,
         record["name"],
@@ -786,6 +814,8 @@ async def loadAgent(
         record["template_id"],
         nodeManager,
         record.get("rag_id") if record.get("rag_enabled") else None,
+        record.get("description"),
+        metadata if isinstance(metadata, dict) else None,
     )
     await agent.build()
     return agent
