@@ -13,21 +13,24 @@ is loaded when a query needs it and none is kept. It is loaded once:
 queries at once for an agent not kept all wait on the one load, rather
 than each loading it.
 
-The manager keeps up to `maxAgents` agents - MAX_AGENTS unless it is
+An agent is a big object - its graph, and its nodes with their models -
+so the manager keeps up to `maxAgents` of them - MAX_AGENTS unless it is
 built with another limit - in an LRU of its own: a query makes its agent
 the most recently used, and keeping one past the limit drops the least
-recently used, which is released: its nodes go back to the node manager,
-once its running queries are answered. It is the manager's own dict, not
-memoryDb, which caches the records an agent is built from. A dropped
-agent is loaded again on its next query.
+recently used. The manager holds the only lasting reference to an
+agent, so a dropped one is destroyed as soon as its running queries are
+answered, as `agents.agent` says: its destructor hands its nodes back,
+wiped, and its graph and triggers go with it. It is the manager's own
+dict, not memoryDb, which caches the records an agent is built from. A
+dropped agent is loaded again on its next query.
 
 A kept agent is not read from Firestore again while it is kept, nor are
 its records while memoryDb caches them: pausing an agent, or editing its
 template, reaches it once it is dropped and its records are gone from
 memoryDb, or the process restarts. An agent this process changes, as
 the service does to give it a rag, is changed at once: `dropAgent`
-drops it if kept, and the cache holds its record as changed, so its
-next query builds it afresh.
+drops it if kept, to be destroyed, and the cache holds its record as
+changed, so its next query builds it afresh.
 """
 
 import asyncio
@@ -40,7 +43,8 @@ from agents.nodeManager import NodeManager, getNodeManager
 
 LOGGER = logging.getLogger(__name__)
 
-# Agents kept; past this, the least recently used is dropped.
+# Agents kept; past this, the least recently used is dropped, to be
+# destroyed.
 MAX_AGENTS = 10
 
 
@@ -92,7 +96,7 @@ class AgentManager:
                 self.loading[key] = load
             # Shielded: a query cancelled while it waits leaves the load
             # to the others. Once loaded, the agent is looked up again: it
-            # may have been dropped, and released, while this one waited.
+            # may have been dropped while this one waited.
             await asyncio.shield(load)
 
     def _forgetLoad(self, key: tuple[str, str], load: asyncio.Task) -> None:
@@ -103,25 +107,22 @@ class AgentManager:
 
     async def _loadAndKeep(self, projectId: str, agentId: str) -> None:
         """Load the agent and keep it as the most recently used; past the
-        limit, the least recently used is dropped and released."""
+        limit, the least recently used is dropped, to be destroyed."""
         agent = await loadAgent(self.nodeManager, projectId, agentId)
         self.agents[agentId] = agent
         self.agents.move_to_end(agentId)
         LOGGER.info("Kept %s; %s agents kept.", agent, len(self.agents))
         if len(self.agents) > self.maxAgents:
-            _, dropped = self.agents.popitem(last=False)
-            dropped.release()
-            LOGGER.info("Dropped %s, the least recently used.", dropped)
+            droppedId, _ = self.agents.popitem(last=False)
+            LOGGER.info("Dropped agent %s, the least recently used.", droppedId)
 
     def dropAgent(self, agentId: str) -> bool:
-        """Drop and release the agent `agentId` if it is kept, so it is
-        built afresh on its next query, from its records as they are now;
-        whether it was kept."""
-        dropped = self.agents.pop(agentId, None)
-        if dropped is None:
+        """Drop the agent `agentId` if it is kept, to be destroyed, so it
+        is built afresh on its next query, from its records as they are
+        now; whether it was kept."""
+        if self.agents.pop(agentId, None) is None:
             return False
-        dropped.release()
-        LOGGER.info("Dropped %s, as it changed.", dropped)
+        LOGGER.info("Dropped agent %s, as it changed.", agentId)
         return True
 
     async def settle(self) -> None:

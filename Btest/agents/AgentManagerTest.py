@@ -29,8 +29,10 @@ the chat model node, LangGraph and the service.
    2000 conversations' chat history - the least recently used dropped
    first, so building again reads nothing.
 4. Kept agents: a built agent is kept, ten at most, the least recently
-   used dropped first and its node released - once its running query is
-   answered; a dropped one is built again on its next query.
+   used dropped first; a dropped agent is destroyed as soon as nothing
+   holds it - its running query answered - and its destructor releases
+   its node, wiped; one still held works on until it is let go; and a
+   dropped one is built again on its next query.
 5. Queries: the chat model answers, on the node reserved at build;
    queries at once share one load, even one that fails; a cancelled
    query leaves the load to the others; an agent dropped while its query
@@ -54,6 +56,7 @@ import asyncio
 import copy
 import logging
 import uuid
+import weakref
 from collections import defaultdict
 from datetime import datetime, timezone
 from itertools import pairwise
@@ -65,6 +68,7 @@ from langgraph.graph import END, START
 from agents import agentStore, service
 from agents.agent import (
     MAX_RUN_STEPS,
+    Agent,
     AgentNotFoundError,
     AgentNotRunnableError,
     Reply,
@@ -248,6 +252,28 @@ class SettlingAgentManager(AgentManager):
         reply = await super().query(*arguments, **settings)
         await self.settle()
         return reply
+
+
+class RecordingNodeManager(NodeManager):
+    """A `NodeManager` that notes, in `reservedNodes`, the nodes it built
+    and has not released yet: the manager itself keeps none, so a test
+    sees them here."""
+
+    def __init__(self, *arguments, **settings) -> None:
+        """A manager that has reserved nothing yet."""
+        super().__init__(*arguments, **settings)
+        self.reservedNodes: set[NodeBase] = set()
+
+    def reserveNode(self, handler: str, **reservation) -> NodeBase:
+        """The node, noted as reserved."""
+        node = super().reserveNode(handler, **reservation)
+        self.reservedNodes.add(node)
+        return node
+
+    def releaseNode(self, node: NodeBase) -> None:
+        """Release the node, noted as no longer reserved."""
+        super().releaseNode(node)
+        self.reservedNodes.discard(node)
 
 
 def buildChatNodeType(**overrides) -> dict:
@@ -526,6 +552,18 @@ def answerOf(reply: Reply | BaseException) -> str | BaseException:
     return reply if isinstance(reply, BaseException) else reply.answer
 
 
+async def settleEveryTask() -> None:
+    """Wait until every other task of the loop is done: the runs of an
+    agent no longer kept too, which no manager settles. A run cut off as
+    `asyncio.run` returns would hold its agent in a reference cycle, kept
+    until the garbage collector frees it; a run that ends holds nothing.
+    """
+    current = asyncio.current_task()
+    await asyncio.gather(
+        *(task for task in asyncio.all_tasks() if task is not current)
+    )
+
+
 # What a change of records does to an agent that cannot then run, and a
 # part of the refusal's message.
 NOT_RUNNABLE_CASES = {
@@ -783,7 +821,7 @@ def builtModels(monkeypatch) -> list[RecordingModel]:
 def agentManager(firestore, builtModels) -> AgentManager:
     """A manager with no agent kept, on a node manager of its own, whose
     queries end once their runs have."""
-    return SettlingAgentManager(NodeManager())
+    return SettlingAgentManager(RecordingNodeManager())
 
 
 @pytest.fixture
@@ -792,7 +830,7 @@ def scriptedManager(firestore, builtModels) -> AgentManager:
     node type in Firestore."""
     firestore.put(NODE_TYPES, buildScriptedNodeType())
     nodeClasses = {**NODE_CLASSES, ScriptedNode.handler: ScriptedNode}
-    return SettlingAgentManager(NodeManager(nodeClasses=nodeClasses))
+    return SettlingAgentManager(RecordingNodeManager(nodeClasses=nodeClasses))
 
 
 @pytest.fixture
@@ -1083,7 +1121,7 @@ class TestGraphs:
         [_, review] = [node.chatModel.llm for node in agent.nodes]
         # The input node is a step, then draft and review a step each.
         assert len(review.received) == (MAX_RUN_STEPS - 1) // 2
-        assert agent.runningQueries == 0
+        assert agent.runs == set()
 
 
 class TestTriggers:
@@ -1166,19 +1204,43 @@ class TestKeptAgents:
 
         assert list(agentManager.agents) == agentIds[1:]
 
-    def testDroppedAgentReleasesItsNode(self, agentManager, firestore):
+    def testDroppedAgentIsDestroyedWithItsNode(self, agentManager, firestore):
         agentIds = putAgents(firestore, 11)
+        first = asyncio.run(agentManager.getAgent(PROJECT_ID, agentIds[0]))
+        [node] = first.nodes
+        firstAgent = weakref.ref(first)
+        del first
 
-        dropped, *kept = [
+        kept = [
             asyncio.run(agentManager.getAgent(PROJECT_ID, agentId))
-            for agentId in agentIds
+            for agentId in agentIds[1:]
         ]
 
-        assert dropped.nodes == []
-        assert dropped.graph is None
+        assert firstAgent() is None
+        assert node.config == {}
+        assert node.chatModel is None
         assert agentManager.nodeManager.reservedNodes == {
-            node for agent in kept for node in agent.nodes
+            keptNode for agent in kept for keptNode in agent.nodes
         }
+
+    def testDroppedAgentStillHeldWorksUntilItIsLetGo(self, agentManager):
+        agent = asyncio.run(agentManager.getAgent(PROJECT_ID, AGENT_ID))
+        [node] = agent.nodes
+        agentManager.dropAgent(AGENT_ID)
+
+        async def queryAndSettle(heldAgent: Agent) -> Reply:
+            reply = await heldAgent.query(QUESTION)
+            await heldAgent.settle()
+            return reply
+
+        reply = asyncio.run(queryAndSettle(agent))
+        heldWhileHeld = node in agentManager.nodeManager.reservedNodes
+        del agent
+
+        assert reply.answer == ANSWER
+        assert heldWhileHeld
+        assert node not in agentManager.nodeManager.reservedNodes
+        assert node.config == {}
 
     def testDroppedAgentHoldsItsNodeUntilItsQueryIsAnswered(
         self, agentManager, firestore, builtModels
@@ -1188,6 +1250,8 @@ class TestKeptAgents:
         async def dropWhileQuerying() -> tuple:
             agent = await agentManager.getAgent(PROJECT_ID, AGENT_ID)
             [node] = agent.nodes
+            # Only the manager, and then the query, hold it.
+            del agent
             builtModels[0].gate = asyncio.Event()
             query = asyncio.create_task(
                 agentManager.query(PROJECT_ID, AGENT_ID, QUESTION)
@@ -1196,7 +1260,9 @@ class TestKeptAgents:
                 await agentManager.getAgent(PROJECT_ID, agentId)
             heldWhileQuerying = node in agentManager.nodeManager.reservedNodes
             builtModels[0].gate.set()
-            return node, heldWhileQuerying, (await query).answer
+            answer = (await query).answer
+            await settleEveryTask()
+            return node, heldWhileQuerying, answer
 
         node, heldWhileQuerying, answer = asyncio.run(dropWhileQuerying())
 
@@ -1314,15 +1380,17 @@ class TestQueries:
     def testAgentDroppedWhileItsQueryWaitedIsLoadedAgain(
         self, firestore, builtModels
     ):
-        agentManager = AgentManager(NodeManager(), maxAgents=1)
+        agentManager = AgentManager(RecordingNodeManager(), maxAgents=1)
         [otherAgentId] = putAgents(firestore, 1)
 
         async def queryBothAtOnce() -> list:
-            return await asyncio.gather(
+            replies = await asyncio.gather(
                 agentManager.query(PROJECT_ID, AGENT_ID, QUESTION),
                 agentManager.query(PROJECT_ID, otherAgentId, QUESTION),
                 return_exceptions=True,
             )
+            await settleEveryTask()
+            return replies
 
         replies = asyncio.run(queryBothAtOnce())
 
@@ -1504,7 +1572,7 @@ class TestConvos:
         saved = storedChatHistory(firestore, CONVO_ID)
         assert saved["chat_history"] == {"questions": 1}
 
-    def testReleasedAgentKeepsItsNodesUntilItsRunIsSaved(
+    def testDroppedAgentKeepsItsNodesUntilItsRunIsSaved(
         self, scriptedManager, firestore, monkeypatch
     ):
         putScriptedTemplate(
@@ -1513,19 +1581,22 @@ class TestConvos:
         saving = gateWrites(firestore, monkeypatch)
         nodeManager = scriptedManager.nodeManager
 
-        async def releaseWhileSaving() -> tuple:
+        async def dropWhileSaving() -> tuple:
             await AgentManager.query(
                 scriptedManager, PROJECT_ID, AGENT_ID, QUESTION, CONVO_ID
             )
             agent = scriptedManager.agents[AGENT_ID]
             reservedAtReply = set(agent.nodes)
+            runs = set(agent.runs)
+            # Only the manager, and then the run saving, hold it.
+            del agent
             scriptedManager.dropAgent(AGENT_ID)
             stillReserved = reservedAtReply <= nodeManager.reservedNodes
             saving.set()
-            await agent.settle()
+            await asyncio.gather(*runs)
             return reservedAtReply, stillReserved
 
-        reservedAtReply, stillReserved = runWithin(releaseWhileSaving())
+        reservedAtReply, stillReserved = runWithin(dropWhileSaving())
 
         assert len(reservedAtReply) == 2
         assert stillReserved

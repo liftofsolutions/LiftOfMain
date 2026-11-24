@@ -9,6 +9,10 @@ The reservable ones: a chat model node per provider, and the
 they grow long; and, for now, `FastSupportNode`, an experiment: a guard
 and support in one.
 
+The io nodes - a provider's, out of every graph - are not reserved, so
+not here: the input nodes of `input/`, where a provider's messages come
+in, and the output nodes of `output/`, where the answers go out.
+
     from agents.nodes import NODE_CLASSES, Credential, NodeBase
 
     nodeClass = NODE_CLASSES["openai_chat"]  # OpenAIChatNode

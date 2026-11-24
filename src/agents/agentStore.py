@@ -40,6 +40,8 @@ AGENTS = "agents"
 AGENT_TEMPLATES = "agent_templates"
 NODE_TYPES = "node_types"
 CACHED_COLLECTIONS = (AGENTS, AGENT_TEMPLATES, NODE_TYPES)
+# A project's keys, read as stored, never cached.
+CREDENTIALS = "credentials"
 AGENT_MEMORY = "agent_memory"
 
 # Records each collection's cache keeps before it drops the least used.

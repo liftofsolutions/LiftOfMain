@@ -4,7 +4,7 @@ template wires them into, which answers its queries.
     agent = await loadAgent(nodeManager, projectId, agentId)
     agent.isTriggerAvailable(triggerId)
     reply = await agent.query("Do you deliver to Pune?", convoId)
-    agent.release()
+    del agent    # destroyed with its nodes, once nothing holds it
 
 An `Agent` holds who it is - agentId, name, projectId and templateId,
 from its record in `agents`, and its knowledge base, the record's
@@ -29,12 +29,24 @@ one can start the agent - the template has it, enabled, on one of its
 nodes.
 
 `query` runs the graph on a message - in a conversation, if it names
-one - and answers with what the run goes out with. Queries at once share
-the graph, and the nodes in it. The nodes stay reserved while the agent
-is kept: `release` hands them back to the node manager - at once, or
-once its last running query is answered - which wipes their credentials
-and config. Each run is handed `LLM.USAGE_LOG`, which logs the tokens of
-every chat model call made in it.
+one - and answers with what the run goes out with. Each run is handed
+`LLM.USAGE_LOG`, which logs the tokens of every chat model call made in
+it.
+
+Its life
+--------
+
+1. Built - `loadAgent` reads its records, reserves its nodes, each built
+   new, and builds its graph of them.
+2. Kept - the agent manager keeps it, up to its limit of agents, and it
+   answers queries, many at once, sharing its graph and nodes. A run
+   goes on past its reply, to save its chat history.
+3. Destroyed - once nothing holds it: the manager has dropped it, and
+   every query it was running is answered, its run over, as a query
+   and its run hold the agent while they go on. Python destroys it
+   then, and its destructor, `__del__`, hands each node back to the
+   node manager, which wipes its credential and config; its graph, its
+   triggers and the rest of it go with it.
 
 What nodes keep
 ---------------
@@ -434,7 +446,7 @@ def buildGraph(
 
 class Agent:
     """A project's agent: built once into a graph of the nodes it
-    reserved, then run on queries."""
+    reserved, run on queries, and destroyed with its nodes."""
 
     def __init__(
         self,
@@ -458,10 +470,6 @@ class Agent:
         self.graph: CompiledStateGraph | None = None
         # The ids of the triggers that can start it.
         self.triggerIds: set[str] = set()
-        # Queries running now, replied or not: a released agent hands its
-        # nodes back once none is.
-        self.runningQueries = 0
-        self.isReleased = False
         # The runs going on, kept until they end, as asyncio keeps only a
         # weak hold on a task.
         self.runs: set[asyncio.Task] = set()
@@ -530,16 +538,16 @@ class Agent:
         and nothing is saved.
 
         Raises:
-            AgentNotRunnableError: If the run goes on past MAX_RUN_STEPS
-                steps without reaching the output node, as a loop whose
-                node never picks the way out does.
+            AgentNotRunnableError: If the agent is not built;
+                or the run goes on past MAX_RUN_STEPS steps without
+                reaching the output node, as a loop whose node never picks
+                the way out does.
         """
-        self.runningQueries += 1
-        try:
-            chatHistory = await self._chatHistoryOf(convoId)
-        except BaseException:
-            self._endQuery()
-            raise
+        if self.graph is None:
+            raise AgentNotRunnableError(
+                f"Agent {self.agentId!r} is not built."
+            )
+        chatHistory = await self._chatHistoryOf(convoId)
         reply = asyncio.get_running_loop().create_future()
         run = asyncio.create_task(
             self._runAndSave(message, chatHistory, convoId, reply)
@@ -584,19 +592,19 @@ class Agent:
         finally:
             if not reply.done():
                 reply.cancel()
-            self._endQuery()
 
     async def settle(self) -> None:
         """Wait until every run going on has ended: replied, its chat
         history saved or its failure logged."""
         await asyncio.gather(*self.runs)
 
-    def _endQuery(self) -> None:
-        """A query has ended: if the agent is released and it was the last,
-        its nodes go back."""
-        self.runningQueries -= 1
-        if self.isReleased and self.runningQueries == 0:
-            self._returnNodes()
+    def __del__(self) -> None:
+        """Destroy the agent with what it holds, as nothing holds it any
+        more: each node goes back to the node manager, which wipes its
+        credential and config, and the graph and triggers go too."""
+        self._returnNodes()
+        self.triggerIds.clear()
+        LOGGER.debug("Destroyed agent %s.", self.agentId)
 
     async def _run(self, message: str, chatHistory: dict) -> dict:
         """The state a run of the graph on `message` ends with, coming in
@@ -629,14 +637,6 @@ class Agent:
             return {}
         chatHistory = await agentStore.fetchChatHistory(self.agentId, convoId)
         return {} if chatHistory is None else copy.deepcopy(chatHistory)
-
-    def release(self) -> None:
-        """Let the agent go: its nodes go back to the node manager at once,
-        or, while queries run, once the last of them ends - saved, after
-        its reply."""
-        self.isReleased = True
-        if self.runningQueries == 0:
-            self._returnNodes()
 
     def _returnNodes(self) -> None:
         """Hand every node back to the node manager, which wipes its

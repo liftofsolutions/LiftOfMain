@@ -1,45 +1,57 @@
-"""What a provider - WhatsApp - sends an agent: its check of the agent's
-webhook, and its events, each answered by the agent and sent back.
+"""What a provider - WhatsApp - sends an agent: its events, each answered
+by the agent and sent back.
 
 An agent's webhook is its query URL, with the provider named:
 
-    GET  /agents/{projectId}/{agentId}/query?provider=whatsapp&hub.mode=...
     POST /agents/{projectId}/{agentId}/query?provider=whatsapp
 
 so an agent has one URL for every provider, and no new one to make for
 each. What the provider sends is handled by the agent's io nodes of it:
-the nodes of its template a trigger, enabled, points to, whose node
-type's handler is the provider's, each built - as an io node is, out of
-the graph - with its merged config, its secrets in its credential.
+for each node of its template a trigger, enabled, points to, whose node
+type's handler is the provider's, an `IoNodes` pair - its input node,
+where messages come in, and its output node, where answers go out -
+both built, as io nodes are, out of the graph, from the node's merged
+config, each holding the secrets its class names in its credential.
 An agent with none, an agent not found, and a provider no io node
 handles, are all PAGE_NOT_FOUND: nothing tells them apart.
 
-* `verifyCallback` - the challenge the first of those nodes answers the
-  provider's check with, given the node's token.
-* `receiveEvent` - the messages the nodes read out of an event, each
-  checking it came from the provider; it hands back how many at once,
-  and the agent answers them in the background, each in the
-  conversation of its sender with that node, `convoIdOf`, its answer
-  sent back by the node. An answer that fails is logged.
+`receiveEvent` takes the messages the input nodes read out of an event,
+at their entry points, each checking it came from the provider; it
+hands back how many at once, and the agent answers them in the
+background, each in the conversation of its sender with that node,
+`convoIdOf`, its answer sent by the paired output node. An answer that
+fails is logged.
 
-A node is configured for the call, and deconfigured once its work is
-done: its secrets are kept no longer. A secret is never logged.
+The provider's check of the webhook - WhatsApp's GET with
+`hub.challenge` - is not answered for now: GitHub issue #15.
+
+Nodes are configured for the call, and deconfigured once their work is
+done: their secrets are kept no longer. A secret is never logged.
 """
 
 import asyncio
 import logging
 import uuid
+from typing import NamedTuple
 
 from agents import agentStore
 from agents.agent import AgentNotRunnableError, mergeConfig
 from agents.agentManager import getAgentManager
 from agents.nodes.credential import Credential
-from agents.nodes.whatsappNode import WhatsAppMessage, WhatsAppNode
+from agents.nodes.input.whatsappNode import (
+    WhatsAppInputNode,
+    WhatsAppMessage,
+)
+from agents.nodes.nodeBase import NodeBase
+from agents.nodes.output.whatsappNode import WhatsAppOutputNode
 
 LOGGER = logging.getLogger(__name__)
 
-# The io node class that handles each provider, by its handler.
-IO_NODE_CLASSES = {WhatsAppNode.handler: WhatsAppNode}
+# The io node classes that handle each provider, by the handler of its
+# node type: its input node's class, and its output node's.
+IO_NODE_CLASSES = {
+    WhatsAppInputNode.handler: (WhatsAppInputNode, WhatsAppOutputNode)
+}
 # What a caller is told of a webhook with nothing behind it.
 PAGE_NOT_FOUND = "Page not found."
 # The namespace a conversation's id is drawn in, from its node and
@@ -60,14 +72,31 @@ class NotFromProviderError(PermissionError):
     provider."""
 
 
+class IoNodes(NamedTuple):
+    """A template node's io nodes: its input node, where messages come
+    in, and its output node, where answers go out."""
+
+    inputNode: NodeBase
+    outputNode: NodeBase
+
+    def deconfigure(self) -> None:
+        """Deconfigure both: their secrets are kept no longer."""
+        self.inputNode.deconfigure()
+        self.outputNode.deconfigure()
+
+
 def convoIdOf(nodeId: str, sender: str) -> str:
     """The id of the conversation of `sender` with the io node `nodeId`."""
     return str(uuid.uuid5(CONVO_NAMESPACE, f"{nodeId}:{sender}"))
 
 
-async def ioNodesOf(projectId: str, agentId: str, provider: str) -> list:
-    """The agent's io nodes of `provider`, each configured: its merged
-    config, the secrets its class names in its credential.
+async def ioNodesOf(
+    projectId: str, agentId: str, provider: str
+) -> list[IoNodes]:
+    """The agent's io nodes of `provider`, a pair for each node a trigger
+    points to, each configured: the node's merged config, with every
+    secret either class names taken out of it, and in its credential the
+    secrets its own class names.
 
     Raises:
         PageNotFoundError: If no node class handles `provider`, or the
@@ -76,9 +105,10 @@ async def ioNodesOf(projectId: str, agentId: str, provider: str) -> list:
         AgentNotRunnableError: If the agent cannot run, or a node of
             `provider` lacks what it needs; the error names no value.
     """
-    nodeClass = IO_NODE_CLASSES.get(provider)
-    if nodeClass is None:
+    nodeClasses = IO_NODE_CLASSES.get(provider)
+    if nodeClasses is None:
         raise PageNotFoundError(f"No io node handles {provider!r}.")
+    inputClass, outputClass = nodeClasses
     agent = await getAgentManager().getAgent(projectId, agentId)
     template = await agentStore.fetchTemplate(agent.templateId) or {}
     nodesById = {node["id"]: node for node in template.get("nodes", [])}
@@ -100,18 +130,31 @@ async def ioNodesOf(projectId: str, agentId: str, provider: str) -> list:
         )
         secrets = {
             key: config.pop(key)
-            for key in nodeClass.secretKeys
+            for key in (*inputClass.secretKeys, *outputClass.secretKeys)
             if key in config
         }
-        ioNode = nodeClass(nodeId, node["name"])
+        pair = IoNodes(
+            inputClass(nodeId, node["name"]),
+            outputClass(nodeId, node["name"]),
+        )
         try:
-            ioNode.configure(Credential(secrets), config)
+            for ioNode in pair:
+                ioNode.configure(
+                    Credential(
+                        {
+                            key: secrets[key]
+                            for key in type(ioNode).secretKeys
+                            if key in secrets
+                        }
+                    ),
+                    config,
+                )
         except ValueError as error:
-            ioNode.deconfigure()
+            pair.deconfigure()
             for built in ioNodes:
                 built.deconfigure()
             raise AgentNotRunnableError(str(error)) from None
-        ioNodes.append(ioNode)
+        ioNodes.append(pair)
     if not ioNodes:
         raise PageNotFoundError(
             f"Agent {agentId!r} has no enabled {provider} trigger."
@@ -132,37 +175,6 @@ def isNodeTypeOf(
     )
 
 
-async def verifyCallback(
-    projectId: str, agentId: str, provider: str, query: dict
-) -> str:
-    """The challenge to answer the provider's check of the webhook with,
-    given its query parameters: the first io node's that takes them.
-
-    Raises:
-        PageNotFoundError, AgentNotFoundError, AgentNotRunnableError: As
-            `ioNodesOf` raises them.
-        NotFromProviderError: If no node takes them.
-    """
-    ioNodes = await ioNodesOf(projectId, agentId, provider)
-    try:
-        for ioNode in ioNodes:
-            challenge = ioNode.verifyCallback(query)
-            if challenge is not None:
-                LOGGER.info(
-                    "%s webhook of agent %s verified by node %s.",
-                    provider,
-                    agentId,
-                    ioNode.name,
-                )
-                return challenge
-    finally:
-        for ioNode in ioNodes:
-            ioNode.deconfigure()
-    raise NotFromProviderError(
-        f"No {provider} node of agent {agentId!r} takes the check."
-    )
-
-
 async def receiveEvent(
     projectId: str,
     agentId: str,
@@ -170,9 +182,9 @@ async def receiveEvent(
     body: bytes,
     headers: dict,
 ) -> int:
-    """How many messages the agent's io nodes of `provider` read out of
-    an event; the agent answers them in the background, and the nodes
-    send its answers back.
+    """How many messages the agent's input nodes of `provider` read out
+    of an event, at their entry points; the agent answers them in the
+    background, and the paired output nodes send its answers back.
 
     Raises:
         PageNotFoundError, AgentNotFoundError, AgentNotRunnableError: As
@@ -180,20 +192,22 @@ async def receiveEvent(
         NotFromProviderError: If the event fails every node's check.
     """
     ioNodes = await ioNodesOf(projectId, agentId, provider)
-    received = [(ioNode, ioNode.receive(body, headers)) for ioNode in ioNodes]
-    for ioNode, messages in received:
+    received = [
+        (pair, pair.inputNode.entryPoint(body, headers)) for pair in ioNodes
+    ]
+    for pair, messages in received:
         if not messages:
-            ioNode.deconfigure()
+            pair.deconfigure()
     if all(messages is None for _, messages in received):
         raise NotFromProviderError(
             f"The {provider} event fails every check of agent {agentId!r}."
         )
     count = 0
-    for ioNode, messages in received:
+    for pair, messages in received:
         if messages:
             count += len(messages)
             answering = asyncio.create_task(
-                answerMessages(projectId, agentId, ioNode, messages)
+                answerMessages(projectId, agentId, pair, messages)
             )
             ANSWERING.add(answering)
             answering.add_done_callback(ANSWERING.discard)
@@ -209,13 +223,13 @@ async def receiveEvent(
 async def answerMessages(
     projectId: str,
     agentId: str,
-    ioNode: WhatsAppNode,
+    ioNodes: IoNodes,
     messages: list[WhatsAppMessage],
 ) -> None:
     """Have the agent answer each message, in its sender's conversation
-    with `ioNode`, and the node send the answer back; then deconfigure
-    the node. A message whose answer fails is logged, and the next
-    goes on."""
+    with the input node, and the output node send the answer back; then
+    deconfigure both. A message whose answer fails is logged, and the
+    next goes on."""
     try:
         for message in messages:
             try:
@@ -223,9 +237,9 @@ async def answerMessages(
                     projectId,
                     agentId,
                     message.text,
-                    convoIdOf(ioNode.nodeId, message.sender),
+                    convoIdOf(ioNodes.inputNode.nodeId, message.sender),
                 )
-                await ioNode.reply(message.sender, reply.answer)
+                await ioNodes.outputNode.send(message, reply.answer)
             except Exception:
                 LOGGER.exception(
                     "Answering message %s from %s to agent %s, through "
@@ -233,7 +247,7 @@ async def answerMessages(
                     message.messageId,
                     message.sender,
                     agentId,
-                    ioNode.name,
+                    ioNodes.inputNode.name,
                 )
     finally:
-        ioNode.deconfigure()
+        ioNodes.deconfigure()

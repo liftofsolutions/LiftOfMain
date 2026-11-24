@@ -159,10 +159,15 @@ with their merged config, compiles them into a LangGraph graph, and keeps it for
 
 **Configure.** A member of a project makes an agent of it - `POST /agents/{accountUuid}/{projectId}` with
 `{"name", "templateId"}` - running one of the project's templates, or a premade platform template, which is
-copied into the project first; the agent is `active`, `created_by` the account. `POST
+copied into the project first; the agent is `active`, `created_by` the account. The body may also give the
+agent a `description`, and `nodes`, the credentials its nodes are formed with:
+`[{"nodeId": "<a node of the template>", "credentialId": "<a credential of the project>"}]`, each node once.
+With any, the agent runs a copy of the template of its own, those nodes holding their `credential_id` (rule 2),
+so the template it was made from, and its other agents, are left as they were. The answer lists the nodes of the
+template the agent runs, each with its credential, if any. `POST
 /agents/{accountUuid}/{projectId}/{agentId}/rag` with `{"ragId"}` sets the agent's own `rag_enabled` and
-`rag_id` to a ready rag of the project (rule 7), and drops the agent if it is kept, so it is built afresh on its
-next query; other agents of its template keep their own rags. Both write Firestore, then the cache; another
+`rag_id` to a ready rag of the project (rule 7), and drops the agent if it is kept - destroyed with its nodes - so it is built afresh on
+its next query; other agents of its template keep their own rags. Both write Firestore, then the cache; another
 process sees the change once its own cache drops the records.
 
 **Query.** Anyone may ask an agent: `POST /agents/{projectId}/{agentId}/query` with `{"message": "..."}`. The
@@ -217,17 +222,18 @@ An `agent_memory` document's id is `{agent_id}_{convo_id}`, so a conversation is
 none is made for a trigger:
 
 ```
-GET  /agents/{projectId}/{agentId}/query?provider=whatsapp   the provider's check of the webhook
 POST /agents/{projectId}/{agentId}/query?provider=whatsapp   the provider's event
 ```
+
+The provider's check of the webhook - WhatsApp's `GET` with `hub.challenge` - is not answered for now: GitHub
+issue #15.
 
 1. Build the agent (or use the one kept); it must belong to `projectId`, be `active` and not deleted.
 2. Find its io nodes of the provider: the nodes an enabled trigger points to, whose node type's `handler` is the
    provider's. None - or no agent - is `404 Page not found.`, alike.
 3. Build each with its merged config, its secrets in its `Credential`, and hand it the call: the node does all
-   the provider's own work. A `whatsapp` node answers the check with `hub.challenge`, given its `verify_token`;
-   checks an event's `X-Hub-Signature-256` with its `app_secret`; and reads the text messages sent to its
-   `phone_number_id`. A call failing every node's check is `403`.
+   the provider's own work. A `whatsapp` node checks an event's `X-Hub-Signature-256` with its `app_secret`, and
+   reads the text messages sent to its `phone_number_id`. A call failing every node's check is `403`.
 4. Acknowledge an event with `200 {"status": "accepted", "messages": n}` at once; the agent answers each message
    in the background, in its sender's conversation with that node, and the node sends the answer back
    (`access_token`, Graph API `api_version`).

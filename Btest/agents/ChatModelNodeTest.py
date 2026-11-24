@@ -316,17 +316,24 @@ class TestModelSettings:
         }
         assert settings == reasoning
 
-    def testModelNotInConfigLLMIsRefusedWhenReserved(self, builtModels):
-        nodeManager = NodeManager()
+    def testModelNotInConfigLLMIsRefusedWhenReserved(
+        self, builtModels, monkeypatch
+    ):
+        built = []
+        configure = OpenAIChatNode.configure
+
+        def keepConfigure(node, *arguments):
+            built.append(node)
+            configure(node, *arguments)
+
+        monkeypatch.setattr(OpenAIChatNode, "configure", keepConfigure)
 
         with pytest.raises(KeyError):
-            reserveReply(nodeManager, model="gpt-unlisted")
+            reserveReply(NodeManager(), model="gpt-unlisted")
 
         assert builtModels == []
-        assert nodeManager.reservedNodes == set()
-        [node] = list(nodeManager.freeNodesByHandler["openai_chat"])
+        [node] = built
         assert vars(node) == RELEASED_NODE
-        assert nodeManager.nodes == {node}
 
 
 class TestCall:

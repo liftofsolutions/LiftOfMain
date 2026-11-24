@@ -4,6 +4,8 @@ An agent is configured by a member of its project, so those endpoints
 are scoped to an account and a project, as the rag endpoints are:
 
     POST /agents/{accountUuid}/{projectId}                 make an agent
+        of a template: its name, description, and the credentials its
+        nodes are formed with, by node id
     POST /agents/{accountUuid}/{projectId}/{agentId}/rag   give it a rag
 
 An agent is for public use, so it is asked under its project, with no
@@ -18,19 +20,19 @@ with it - or starts it - keeping its chat history.
 The query URL is the agent's webhook too, for every provider, named by
 `provider` - so there is no URL to make for one:
 
-    GET  /agents/{projectId}/{agentId}/query?provider=whatsapp
-        the provider's check of the webhook, answered with its challenge
     POST /agents/{projectId}/{agentId}/query?provider=whatsapp
         the provider's event: taken at once, its messages answered in
         the background and sent back through the provider
 
 An agent with no enabled trigger of the provider is "Page not found.".
+The provider's check of the webhook - WhatsApp's GET with
+`hub.challenge` - is not answered for now: GitHub issue #15.
 """
 
 import logging
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from agents import service
@@ -53,7 +55,6 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 INTERNAL_ERROR_DETAIL = "Internal server error."
 
 STATUS_INTERNAL_ERROR = 500
-STATUS_NOT_FOUND = 404
 STATUS_INVALID = 422
 ERROR_STATUS_CODES = {
     service.ERROR_NOT_FOUND: 404,
@@ -140,7 +141,8 @@ async def configureAgent(
     projectId: str,
     agentConfig: ConfigureAgentRequest,
 ) -> dict | JSONResponse:
-    """Make an agent of an account's project, running a template."""
+    """Make an agent of an account's project, running a template, its
+    nodes formed with the credentials named."""
     logRequest(
         request,
         {
@@ -155,6 +157,11 @@ async def configureAgent(
             projectId,
             agentConfig.name,
             str(agentConfig.templateId),
+            agentConfig.description,
+            {
+                node.nodeId: str(node.credentialId)
+                for node in agentConfig.nodes
+            },
         )
     except Exception:
         LOGGER.exception(
@@ -292,53 +299,3 @@ async def receiveProviderEvent(
         request,
         JSONResponse(content=ProviderEventResponse(**received).model_dump()),
     )
-
-
-@router.get(
-    "/{projectId}/{agentId}/query",
-    response_class=PlainTextResponse,
-    response_model=None,
-    summary="Verify a provider's webhook",
-)
-async def verifyProviderCallback(
-    request: Request,
-    projectId: str,
-    agentId: str,
-    provider: str | None = None,
-) -> PlainTextResponse | JSONResponse:
-    """The provider's check of the agent's webhook - its query URL, with
-    `provider` - answered with its challenge, given its token."""
-    logRequest(
-        request,
-        {
-            "projectId": projectId,
-            "agentId": agentId,
-            "provider": provider,
-            "mode": request.query_params.get("hub.mode"),
-        },
-    )
-    if provider is None:
-        return logResponse(
-            request, errorResponse(STATUS_NOT_FOUND, service.PAGE_NOT_FOUND)
-        )
-    try:
-        verified = await service.verifyProviderCallback(
-            projectId, agentId, provider, dict(request.query_params)
-        )
-    except Exception:
-        LOGGER.exception(
-            "Verifying the %s webhook of agent %s failed.", provider, agentId
-        )
-        return logResponse(
-            request,
-            errorResponse(STATUS_INTERNAL_ERROR, INTERNAL_ERROR_DETAIL),
-        )
-    if "errorKind" in verified:
-        return logResponse(request, toResponse(verified))
-    LOGGER.info(
-        "%s %s answered the %s challenge.",
-        request.method,
-        request.url.path,
-        provider,
-    )
-    return PlainTextResponse(verified["challenge"])

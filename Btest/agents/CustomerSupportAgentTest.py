@@ -57,6 +57,7 @@ from AgentManagerTest import (  # noqa: F401
     CONVO_ID,
     PROJECT_ID,
     FakeFirestore,
+    RecordingNodeManager,
     SettlingAgentManager,
     runWithin,
     buildAgent,
@@ -76,7 +77,6 @@ from agents.agentStore import (
     AGENTS,
     NODE_TYPES,
 )
-from agents.nodeManager import NodeManager
 from agents.nodes import INPUT_NODE_ID, OUTPUT_NODE_ID
 from agents.nodes import chatHistoryNode
 from agents.nodes.chatModelNode import RAG_TOOL_NAME, SUMMARY_ABOUT
@@ -362,7 +362,7 @@ def supportManager(monkeypatch, firestore, pinecone) -> AgentManager:
         "init_chat_model",
         lambda model, **settings: ScriptedModel(),
     )
-    return SettlingAgentManager(NodeManager())
+    return SettlingAgentManager(RecordingNodeManager())
 
 
 def modelsOf(agentManager: AgentManager) -> dict[str, ScriptedModel]:
