@@ -54,14 +54,15 @@ What nodes keep
 Nodes keep two things in the run's state, each as they will:
 
 * `chatHistory` - what is remembered of the conversation, a plain dict.
-  A query names its conversation by a `convoId`, and the run comes in
-  with a copy of its chat history - empty, the first time - which nodes
-  read and change, returning `{"chatHistory": ...}` whole, or changing
-  it in place. Once the run is answered, the history it ends with is
-  saved, and `agentStore` caches it, so the next query reads it from
-  memoryDb, not Firestore; a run that fails saves nothing. A query with
-  no `convoId` - a cron agent's report, say - is of no conversation: its
-  history starts empty, and is not saved.
+  A query names its conversation by a `convoId`, and a copy of its chat
+  history - empty, the first time - loads into the run while it starts,
+  in parallel: a node reads it once `awaitChatHistory` has waited for
+  it, then reads and changes it, returning `{"chatHistory": ...}` whole,
+  or changing it in place. Once the run is answered, the history it ends
+  with is saved - to memoryDb's cache first, so the next query reads it
+  at once, then to Firestore - and a run that fails saves nothing. A
+  query with no `convoId` - a cron agent's report, say - is of no
+  conversation: its history starts empty, and is not saved.
 * `nodeDetails` - each node's own data for the run, under its id,
   `state["nodeDetails"][nodeId]`, which a node changes by returning
   `{"nodeDetails": {nodeId: {key: value}}}`, merged into what is there.
@@ -144,8 +145,9 @@ What cannot run is refused as it is built, with no node left reserved:
   node does yet, a name that is not a slug, a model `configLLM.json`
   does not list; a node searches a rag, and the agent has none; or a
   node has several edges out but cannot pick - it is no chat model node,
-  or it searches a rag - or its pick limits are not counts, name a node
-  it has no edge to, or limit every node it goes on to.
+  or it searches a rag and is no guard, which searches as it picks - or
+  its pick limits are not counts, name a node it has no edge to, or
+  limit every node it goes on to.
 """
 
 import asyncio
@@ -163,6 +165,7 @@ from agents.nodes import (
     INPUT_NODE_ID,
     OUTPUT_ABOUT,
     OUTPUT_NODE_ID,
+    RUN_CHAT_HISTORY,
     RUN_REPLY,
     SPECIAL_NODE_IDS,
     AfterReplyNode,
@@ -373,7 +376,7 @@ def checkPicks(node: NodeBase, targets: list[str]) -> None:
             every node it goes on to, so a run could find no way on; or
             it has several edges out but is no chat model node, which
             picks, or it searches a rag, which a node that picks does
-            not.
+            not - but a guard, whose class `searchesWhilePicking`.
     """
     name = node.name
     limits = node.config.get(PICK_LIMITS, {})
@@ -401,7 +404,11 @@ def checkPicks(node: NodeBase, targets: list[str]) -> None:
             f"Node {name!r} has several edges out, but no model to pick "
             "one with."
         )
-    if len(targets) > 1 and node.config.get("rag"):
+    if (
+        len(targets) > 1
+        and node.config.get("rag")
+        and not node.searchesWhilePicking
+    ):
         raise AgentNotRunnableError(
             f"Node {name!r} has several edges out, so it picks where a run "
             "goes, and a node that picks does not search a rag."
@@ -529,13 +536,15 @@ class Agent:
         """The agent's answer to `message`, in the conversation `convoId`
         if one is named, and that id: given as soon as the run has it.
 
-        The run comes in with a copy of the conversation's chat history -
-        empty, the first time, or with no conversation. It goes on in a
-        task of its own, and replies at its first after-reply node, or its
-        output node: the rest of it - keeping the history, summarising it
-        - and saving the history it ends with, if a conversation is named,
-        happen after the answer is handed back. A failure then is logged,
-        and nothing is saved.
+        The run starts at once, in a task of its own, and the
+        conversation's chat history - a copy, empty the first time, or
+        with no conversation - loads into it meanwhile: a node waits for
+        it only as it reads it, so a guard's search of the rag goes on
+        while it loads. The run replies at its first after-reply node, or
+        its output node: the rest of it - keeping the history, summarising
+        it - and saving the history it ends with, if a conversation is
+        named, happen after the answer is handed back. A failure then is
+        logged, and nothing is saved.
 
         Raises:
             AgentNotRunnableError: If the agent is not built;
@@ -547,11 +556,8 @@ class Agent:
             raise AgentNotRunnableError(
                 f"Agent {self.agentId!r} is not built."
             )
-        chatHistory = await self._chatHistoryOf(convoId)
         reply = asyncio.get_running_loop().create_future()
-        run = asyncio.create_task(
-            self._runAndSave(message, chatHistory, convoId, reply)
-        )
+        run = asyncio.create_task(self._runAndSave(message, convoId, reply))
         self.runs.add(run)
         run.add_done_callback(self.runs.discard)
         # Shielded: a query cancelled while it waits leaves the run to go
@@ -562,23 +568,31 @@ class Agent:
     async def _runAndSave(
         self,
         message: str,
-        chatHistory: dict,
         convoId: str | None,
         reply: asyncio.Future,
     ) -> None:
-        """Run the graph on `message`, giving `reply` its answer as the run
-        replies, then save the chat history it ends with, in the
-        conversation `convoId` if one is named.
+        """Run the graph on `message`, its chat history loading meanwhile,
+        giving `reply` its answer as the run replies, then save the chat
+        history it ends with, in the conversation `convoId` if one is
+        named.
 
-        A failure before the reply is the reply's; one after it is logged.
+        A failure before the reply is the reply's; one after it is logged,
+        and saves nothing. A save Firestore refuses is logged too: the
+        cache has the history already.
         """
         RUN_REPLY.set(reply)
+        chatHistory: dict = {}
+        loading = None
+        if convoId is not None:
+            loading = asyncio.create_task(
+                self._loadChatHistory(convoId, chatHistory)
+            )
+        RUN_CHAT_HISTORY.set(loading)
         try:
             state = await self._run(message, chatHistory)
-            if convoId is not None:
-                await agentStore.saveChatHistory(
-                    self.agentId, self.projectId, convoId, state["chatHistory"]
-                )
+            if loading is not None:
+                # Loaded before it is saved, even if no node read it.
+                await loading
         except Exception as error:
             if not reply.done():
                 reply.set_exception(error)
@@ -589,9 +603,25 @@ class Agent:
                     self.agentId,
                     convoId,
                 )
+            return
         finally:
+            if loading is not None and not loading.done():
+                loading.cancel()
             if not reply.done():
                 reply.cancel()
+        if convoId is None:
+            return
+        try:
+            await agentStore.saveChatHistory(
+                self.agentId, self.projectId, convoId, state["chatHistory"]
+            )
+        except Exception:
+            LOGGER.exception(
+                "Agent %s's chat history of conversation %s is cached, but "
+                "Firestore did not save it; its next save writes it whole.",
+                self.agentId,
+                convoId,
+            )
 
     async def settle(self) -> None:
         """Wait until every run going on has ended: replied, its chat
@@ -629,14 +659,14 @@ class Agent:
                 f"steps without reaching {OUTPUT_NODE_ID!r}."
             ) from error
 
-    async def _chatHistoryOf(self, convoId: str | None) -> dict:
-        """A copy of the conversation's chat history, for the run's nodes
-        to change as they will - the cached one stays as it is until the
-        run is saved; empty, with no conversation, or a new one."""
-        if convoId is None:
-            return {}
-        chatHistory = await agentStore.fetchChatHistory(self.agentId, convoId)
-        return {} if chatHistory is None else copy.deepcopy(chatHistory)
+    async def _loadChatHistory(self, convoId: str, chatHistory: dict) -> None:
+        """Load a copy of the conversation's chat history into
+        `chatHistory`, in place - the run's, for its nodes to change as
+        they will, while the cached one stays as it is until the run is
+        saved; nothing, for a new conversation."""
+        stored = await agentStore.fetchChatHistory(self.agentId, convoId)
+        if stored is not None:
+            chatHistory.update(copy.deepcopy(stored))
 
     def _returnNodes(self) -> None:
         """Hand every node back to the node manager, which wipes its

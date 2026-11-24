@@ -25,9 +25,11 @@ none, then to the cache, so this process reads them as saved.
 A conversation's chat history is an `agent_memory` record: whatever the
 agent's nodes keep of it, a plain dict, read as the records above are,
 and saved after every answer the agent gives in the conversation - to
-Firestore, then to its cache, of at most MEMORY_CACHE_MAX_RECORDS
-conversations, so the next query reads it from memoryDb rather than
-Firestore.
+its cache first, of at most MEMORY_CACHE_MAX_RECORDS conversations, so
+the conversation's next query reads it from memoryDb at once, even while
+Firestore is being written; then to Firestore. A write Firestore refuses
+leaves the cache a turn ahead of it, until the next save writes the
+whole history again.
 """
 
 from datetime import datetime, timezone
@@ -123,10 +125,13 @@ async def fetchChatHistory(agentId: str, convoId: str) -> dict | None:
 async def saveChatHistory(
     agentId: str, projectId: str, convoId: str, chatHistory: dict
 ) -> None:
-    """Save `chatHistory` as the agent's conversation `convoId`'s: to
-    Firestore, then to the cache, so the next query finds it there.
+    """Save `chatHistory` as the agent's conversation `convoId`'s: to the
+    cache first, so the next query finds it there at once, without
+    waiting on Firestore, then to Firestore.
 
-    The cache is written last, so it never holds what Firestore does not.
+    Raises:
+        Exception: Whatever Firestore raises; the cache keeps the history
+            all the same, and the next save writes it whole.
     """
     chatHistoryId = chatHistoryIdOf(agentId, convoId)
     record = {
@@ -136,10 +141,10 @@ async def saveChatHistory(
         "chat_history": chatHistory,
         "updated_at": datetime.now(timezone.utc),
     }
+    getMemoryDb().addRecord(AGENT_MEMORY, chatHistoryId, record)
     await utilities.getFirestoreAdapter().upsertDocument(
         AGENT_MEMORY, Document(chatHistoryId, record)
     )
-    getMemoryDb().addRecord(AGENT_MEMORY, chatHistoryId, record)
 
 
 registerCaches()

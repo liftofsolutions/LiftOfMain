@@ -40,11 +40,14 @@ the chat model node, LangGraph and the service.
 6. Conversations: a query of none keeps nothing; a conversation's first
    query starts its chat history empty, and the history a run ends with
    is saved, to Firestore and memoryDb, so the next query reads it from
-   memoryDb - or Firestore, once it is dropped. Nodes - `ScriptedNode`s
-   here - read the history and change it, whole or in place; a run that
-   fails saves nothing and leaves the cached history as it was, and a
-   conversation is one agent's alone. Each node keeps its details for
-   the run under its id.
+   memoryDb - or Firestore, once it is dropped. The cache is written
+   before Firestore, so the next query reads the last turn while
+   Firestore still saves it, and a save Firestore refuses leaves the
+   cache a turn ahead until the next save. Nodes - `ScriptedNode`s here
+   - read the history, once loaded, and change it, whole or in place; a
+   run that fails saves nothing and leaves the cached history as it
+   was, and a conversation is one agent's alone. Each node keeps its
+   details for the run under its id.
 7. Service: anyone gets the agent's answer, in a conversation or none -
    no account, and no project record, is read - agent errors come back
    as error kinds, and every answer fits the route's response model.
@@ -90,6 +93,7 @@ from agents.nodes import (
     OUTPUT_ABOUT,
     OUTPUT_NODE_ID,
     NodeBase,
+    awaitChatHistory,
 )
 from config import ServerConfig
 from DbAdapters import Document
@@ -233,7 +237,9 @@ class ScriptedNode(NodeBase):
         self.seen: list[dict] = []
 
     async def __call__(self, state: dict) -> dict:
-        """Keep the state, count in the history, and return the update."""
+        """Keep the state, once its chat history is loaded, count in the
+        history, and return the update."""
+        await awaitChatHistory()
         self.seen.append(copy.deepcopy(state))
         chatHistory = state["chatHistory"]
         for key in self.config.get("count", []):
@@ -1525,13 +1531,14 @@ class TestConvos:
         cached = memoryDb.getRecord(AGENT_MEMORY, chatHistoryId)
         assert cached["chat_history"] == {"questions": 1}
 
-    def testSaveFirestoreRefusesLeavesTheCachedChatHistory(
+    def testSaveFirestoreRefusesIsLoggedAndTheCacheKeepsTheTurn(
         self, scriptedManager, firestore, memoryDb, monkeypatch, caplog
     ):
         putScriptedTemplate(
             firestore, buildScriptedNode("notes", count=["questions"])
         )
         askInConvo(scriptedManager, QUESTION)
+        upsertDocument = firestore.upsertDocument
 
         async def refuseTheWrite(*arguments, **keywords) -> None:
             raise ConnectionError("Firestore is out of reach.")
@@ -1543,10 +1550,59 @@ class TestConvos:
 
         # The answer was given before the save; the failure is logged.
         assert reply.answer == ANSWER
-        assert "then failed; its chat history is not saved" in caplog.text
+        assert "is cached, but Firestore did not save it" in caplog.text
         assert "Firestore is out of reach." in caplog.text
-        cached = memoryDb.getRecord(AGENT_MEMORY, chatHistoryIdOf(CONVO_ID))
-        assert cached["chat_history"] == {"questions": 1}
+        chatHistoryId = chatHistoryIdOf(CONVO_ID)
+        cached = memoryDb.getRecord(AGENT_MEMORY, chatHistoryId)
+        assert cached["chat_history"] == {"questions": 2}
+        assert storedChatHistory(firestore, CONVO_ID)["chat_history"] == {
+            "questions": 1
+        }
+
+        monkeypatch.setattr(firestore, "upsertDocument", upsertDocument)
+        askInConvo(scriptedManager, "And then?")
+
+        # The next save writes the whole history.
+        assert storedChatHistory(firestore, CONVO_ID)["chat_history"] == {
+            "questions": 3
+        }
+
+    def testNextQueryReadsTheLastTurnWhileFirestoreSavesIt(
+        self, scriptedManager, firestore, memoryDb, monkeypatch
+    ):
+        putScriptedTemplate(
+            firestore, buildScriptedNode("notes", count=["questions"])
+        )
+        saving = gateWrites(firestore, monkeypatch)
+        chatHistoryId = chatHistoryIdOf(CONVO_ID)
+
+        async def askTwiceWhileSaving() -> tuple:
+            first = await AgentManager.query(
+                scriptedManager, PROJECT_ID, AGENT_ID, QUESTION, CONVO_ID
+            )
+            # The first run's turn is cached as its run ends, while
+            # Firestore is still held.
+            while memoryDb.getRecord(AGENT_MEMORY, chatHistoryId) is None:
+                await asyncio.sleep(0)
+            second = await AgentManager.query(
+                scriptedManager, PROJECT_ID, AGENT_ID, "And?", CONVO_ID
+            )
+            savedMeanwhile = storedChatHistory(firestore, CONVO_ID)
+            saving.set()
+            await scriptedManager.settle()
+            return first, second, savedMeanwhile
+
+        first, second, savedMeanwhile = runWithin(askTwiceWhileSaving())
+
+        assert (first.answer, second.answer) == (ANSWER, ANSWER)
+        assert savedMeanwhile is None
+        [notes, _] = scriptedManager.agents[AGENT_ID].nodes
+        assert notes.seen[1]["chatHistory"] == {"questions": 1}
+        # Read from Firestore once: before the first answer, when there
+        # was none.
+        assert firestore.reads.count((AGENT_MEMORY, chatHistoryId)) == 1
+        saved = storedChatHistory(firestore, CONVO_ID)
+        assert saved["chat_history"] == {"questions": 2}
 
     def testReplyIsGivenBeforeTheChatHistoryIsSaved(
         self, scriptedManager, firestore, monkeypatch

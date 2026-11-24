@@ -62,7 +62,9 @@ nodes           1 ── 0..N  triggers
 handler, e.g. "Acme CRM lookup" = `handler: "http_api"` with the URL in its default `config`.
 
 Only the nodes a template's edges name run in the agent's graph, and today those are chat models -
-`openai_chat`, `gemini_chat`, `deepseek_chat` and `xai_chat` have node classes - and `chat_history`. `io` nodes
+`openai_chat`, `gemini_chat`, `deepseek_chat` and `xai_chat` have node classes - and `chat_history`, and
+`openai_guard`: an OpenAI chat node with `rag_search` that picks whether a message goes on to the customer agent
+or is turned away, and searches the rag for it at the same time, the search handed on as the agent's first. `io` nodes
 stay out of the edges, as they receive events and send messages on their own channels. Tool nodes join a graph
 once they can run; a chat model searches the knowledge base itself, with `rag_search`.
 

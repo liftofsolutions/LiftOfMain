@@ -52,6 +52,7 @@ export type NodeCategory = "chat_model" | "tool" | "io" | "memory";
 // Not limited to these.
 export type Handler =
   | "openai_chat"
+  | "openai_guard"
   | "anthropic_chat"
   | "gemini_chat"
   | "deepseek_chat"

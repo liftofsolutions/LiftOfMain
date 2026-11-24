@@ -22,6 +22,11 @@ A node picking where a run goes next reads the output node as
 OUTPUT_ABOUT: the end of the run, its own answer going out as the
 agent's.
 
+A run starts as soon as it is asked, its chat history loading meanwhile
+into its state's `chatHistory`: a node reads the history only once
+`awaitChatHistory` has waited for it, so work that needs none - a
+guard's search of the rag - goes on while it loads.
+
 A run replies as soon as its answer is known, before it ends: the agent
 waits on RUN_REPLY, a future, and `giveReply` gives it the answer. The
 output node gives it, and before it, the first node that runs after the
@@ -50,6 +55,25 @@ OUTPUT_ABOUT = "the end of the run: your answer goes out as the agent's."
 RUN_REPLY: contextvars.ContextVar[Future] = contextvars.ContextVar(
     "runReply"
 )
+# The loading of the run's chat history, which goes on while the run
+# does: set in the run's own task, and awaited, by `awaitChatHistory`, by
+# a node before it reads the history.
+RUN_CHAT_HISTORY: contextvars.ContextVar[Future | None] = (
+    contextvars.ContextVar("runChatHistory")
+)
+
+
+async def awaitChatHistory() -> None:
+    """Wait until the run's chat history is loaded into its state's
+    `chatHistory` - at once, if it is, or the run has none to load, as a
+    run of no conversation, or a graph run by hand.
+
+    Raises:
+        Exception: Whatever loading it raised.
+    """
+    loading = RUN_CHAT_HISTORY.get(None)
+    if loading is not None:
+        await loading
 
 
 class InputNode:

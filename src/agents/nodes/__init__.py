@@ -6,8 +6,9 @@ node with several edges out runs as.
 
 The reservable ones: a chat model node per provider, and the
 `ChatHistoryNode`, which keeps a conversation's turns, summarised once
-they grow long; and, for now, `FastSupportNode`, an experiment: a guard
-and support in one.
+they grow long; the `GuardNode`, a customer agent's guardrails, which
+searches the rag for the message as it picks; and, for now,
+`FastSupportNode`, an experiment: a guard and support in one.
 
 The io nodes - a provider's, out of every graph - are not reserved, so
 not here: the input nodes of `input/`, where a provider's messages come
@@ -39,17 +40,20 @@ from agents.nodes.chatModelNode import (
 )
 from agents.nodes.credential import Credential
 from agents.nodes.fastSupportNode import FastSupportNode
+from agents.nodes.guardNode import GuardNode
 from agents.nodes.nodeBase import NodeBase
 from agents.nodes.specialNodes import (
     INPUT_NODE_ID,
     OUTPUT_ABOUT,
     OUTPUT_NODE_ID,
+    RUN_CHAT_HISTORY,
     RUN_REPLY,
     SPECIAL_NODE_IDS,
     AfterReplyNode,
     InputNode,
     OutputNode,
     answerOf,
+    awaitChatHistory,
 )
 
 # Every kind of node that can be reserved, by its handler.
@@ -62,6 +66,7 @@ NODE_CLASSES: dict[str, type[NodeBase]] = {
         XAIChatNode,
         ChatHistoryNode,
         FastSupportNode,
+        GuardNode,
     )
 }
 
@@ -70,6 +75,7 @@ __all__ = [
     "NODE_CLASSES",
     "OUTPUT_ABOUT",
     "OUTPUT_NODE_ID",
+    "RUN_CHAT_HISTORY",
     "RUN_REPLY",
     "SPECIAL_NODE_IDS",
     "AfterReplyNode",
@@ -80,10 +86,12 @@ __all__ = [
     "DeepSeekChatNode",
     "FastSupportNode",
     "GeminiChatNode",
+    "GuardNode",
     "InputNode",
     "NodeBase",
     "OpenAIChatNode",
     "OutputNode",
     "XAIChatNode",
     "answerOf",
+    "awaitChatHistory",
 ]

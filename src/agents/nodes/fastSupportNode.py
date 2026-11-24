@@ -38,7 +38,11 @@ from agents.nodes.chatModelNode import (
     nextStepOf,
 )
 from agents.nodes.credential import Credential
-from agents.nodes.specialNodes import OUTPUT_ABOUT, OUTPUT_NODE_ID
+from agents.nodes.specialNodes import (
+    OUTPUT_ABOUT,
+    OUTPUT_NODE_ID,
+    awaitChatHistory,
+)
 from LLM import ChatModel, buildChatModel
 
 # The guard's provider, and the setting of its config it may change.
@@ -113,7 +117,7 @@ class FastSupportNode(OpenAIChatNode):
             ToolMessage(found, tool_call_id=EARLY_SEARCH_ID),
         ]
         answered = await self._answerWithSearches(
-            [*self._messagesFor(state), *searched]
+            [*await self._messagesFor(state), *searched]
         )
         added = [*searched, *answered]
         return {"messages": added, "answer": added[-1].text}
@@ -123,12 +127,14 @@ class FastSupportNode(OpenAIChatNode):
         chat model node is - its own prompt first."""
         nextStep = await self.guardModel.llm.with_structured_output(
             nextStepOf(GUARD_CHOICES)
-        ).ainvoke(self._guardMessagesFor(state))
+        ).ainvoke(await self._guardMessagesFor(state))
         return AIMessage(nextStep.message), nextStep.next
 
-    def _guardMessagesFor(self, state: dict) -> list[BaseMessage]:
+    async def _guardMessagesFor(self, state: dict) -> list[BaseMessage]:
         """The guard's prompt, the summary of the chat history, its
-        messages, then every message in `state`."""
+        messages, then every message in `state` - once the history is
+        loaded."""
+        await awaitChatHistory()
         chatHistory = state.get("chatHistory", {})
         systemPrompt = self.config["guard"]["system_prompt"]
         summary = summaryOf(chatHistory)

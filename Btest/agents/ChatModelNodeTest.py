@@ -382,9 +382,9 @@ class TestChoice:
         [model] = builtModels
         model.pick = "output"
 
-        answer, picked = asyncio.run(node.choose(buildState(), CHOICES))
+        added, picked = asyncio.run(node.choose(buildState(), CHOICES))
 
-        assert (answer, picked) == (AIMessage(ANSWER), "output")
+        assert (added, picked) == ([AIMessage(ANSWER)], "output")
         assert model.received == [
             [SystemMessage(SYSTEM_PROMPT), HumanMessage(QUESTION)]
         ]

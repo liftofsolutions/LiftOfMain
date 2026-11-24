@@ -44,7 +44,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from agents.nodes.credential import Credential
 from agents.nodes.nodeBase import NodeBase
-from agents.nodes.specialNodes import answerOf
+from agents.nodes.specialNodes import answerOf, awaitChatHistory
 from documentProcessing.documentAnalyzer import countTokens
 from LLM import ChatModel, buildChatModel
 
@@ -133,8 +133,9 @@ class ChatHistoryNode(NodeBase):
         )
 
     async def __call__(self, state: dict) -> dict:
-        """The history with the run's turn added, summarised if it is now
-        past its tokens."""
+        """The history, once loaded, with the run's turn added,
+        summarised if it is now past its tokens."""
+        await awaitChatHistory()
         chatHistory = state["chatHistory"]
         summary = summaryOf(chatHistory)
         messages = [

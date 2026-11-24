@@ -56,10 +56,13 @@ rounds is asked to answer with what it has.
 `choose` sends the same, for a node with several edges out, and has the
 model answer as structured output, in the shape `nextStepOf` gives: its
 answer, and the id of the node the conversation goes on to, out of the
-choices it is given - so it can pick none but those. A graph runs such a
-node as a `ChoosingNode`, which adds the answer to `messages` - not as
-the run's answer: a picking node steers the run, as a reviewer saying
-what to change does - and sends the run on to the node picked. It counts
+choices it is given - so it can pick none but those. It hands back the
+messages the node adds - the answer; a guard's search too, see
+`agents.nodes.guardNode`, whose class `searchesWhilePicking` - and the
+pick. A graph runs such a node as a `ChoosingNode`, which adds them to
+`messages` - not as the run's answer: a picking node steers the run, as
+a reviewer saying what to change does - and sends the run on to the
+node picked. It counts
 its picks in its `nodeDetails`, `{"picks": {nodeId: count}}`, and offers
 its model no node it has picked as often as its `pick_limits` say; with
 one node left to pick, the model is not asked, and the run goes on
@@ -82,6 +85,7 @@ from pydantic import BaseModel, Field, create_model
 from agents.nodes.chatHistoryNode import historyMessagesOf, summaryOf
 from agents.nodes.credential import Credential
 from agents.nodes.nodeBase import NodeBase
+from agents.nodes.specialNodes import awaitChatHistory
 from documentProcessing.service import searchRag
 from LLM import ChatModel, buildChatModel
 
@@ -157,6 +161,9 @@ class ChatModelNode(NodeBase):
     # The config key of how much its models reason, as LangChain names
     # the setting; none, for a provider whose nodes do not set it.
     reasoningSetting: ClassVar[str | None] = None
+    # Whether it searches its rag as it picks where the run goes, as a
+    # guard does: a node that picks searches no rag, but such a node.
+    searchesWhilePicking: ClassVar[bool] = False
 
     def __init__(self, nodeId: str, name: str) -> None:
         """The template node `nodeId`, named `name`, with no chat model
@@ -202,7 +209,7 @@ class ChatModelNode(NodeBase):
         """Add the model's answer to the conversation in `messages` - its
         searches before it, if it has a rag - and keep it as the run's
         answer."""
-        messages = self._messagesFor(state)
+        messages = await self._messagesFor(state)
         if self.config.get("rag"):
             added = await self._answerWithSearches(messages)
         else:
@@ -245,22 +252,24 @@ class ChatModelNode(NodeBase):
 
     async def choose(
         self, state: dict, choices: dict[str, str]
-    ) -> tuple[AIMessage, str]:
-        """The model's answer to the conversation, and the id of the one of
-        `choices` it picks for the conversation to go on to.
+    ) -> tuple[list[BaseMessage], str]:
+        """The messages the node adds - the model's answer to the
+        conversation - and the id of the one of `choices` it picks for
+        the conversation to go on to.
 
         `choices` holds the ids of the nodes it may pick, each with what
         the model reads of it.
         """
         nextStep = await self.chatModel.llm.with_structured_output(
             nextStepOf(choices)
-        ).ainvoke(self._messagesFor(state))
-        return AIMessage(nextStep.message), nextStep.next
+        ).ainvoke(await self._messagesFor(state))
+        return [AIMessage(nextStep.message)], nextStep.next
 
-    def _messagesFor(self, state: dict) -> list[BaseMessage]:
+    async def _messagesFor(self, state: dict) -> list[BaseMessage]:
         """What the model is sent: the system prompt, the summary of the
         conversation's chat history, its messages, then every message in
-        `state`."""
+        `state` - once the history is loaded."""
+        await awaitChatHistory()
         chatHistory = state.get("chatHistory", {})
         systemPrompt = (
             self.config.get("system_prompt") or self.chatModel.systemPrompt
@@ -337,10 +346,10 @@ class ChoosingNode:
         self.choices = choices
 
     async def __call__(self, state: dict) -> Command:
-        """The node's answer added to the conversation, the pick counted,
-        and the run sent on to the node it picked: one of those it has
-        picked fewer times than its limits say. With one of them left,
-        the node is not asked: the run goes on there."""
+        """The node's messages added to the conversation, the pick
+        counted, and the run sent on to the node it picked: one of those
+        it has picked fewer times than its limits say. With one of them
+        left, the node is not asked: the run goes on there."""
         picks = state["nodeDetails"].get(self.nodeId, {}).get("picks", {})
         limits = self.node.config.get(PICK_LIMITS, {})
         choices = {
@@ -352,8 +361,8 @@ class ChoosingNode:
         if len(choices) == 1:
             [nextNodeId] = choices
         else:
-            answer, nextNodeId = await self.node.choose(state, choices)
-            update["messages"] = [answer]
+            added, nextNodeId = await self.node.choose(state, choices)
+            update["messages"] = added
         picks = {**picks, nextNodeId: picks.get(nextNodeId, 0) + 1}
         update["nodeDetails"] = {self.nodeId: {"picks": picks}}
         return Command(goto=nextNodeId, update=update)
