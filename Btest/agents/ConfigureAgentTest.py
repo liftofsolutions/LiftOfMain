@@ -12,14 +12,19 @@ hands its calls to; everything between is real: `checkAccess`,
    running one of its templates, saved to Firestore and memoryDb, which
    then answers queries. A premade platform template is copied into the
    project, and the agent runs the copy, saved with it at once. An
+   agent given a description keeps it; one whose nodes are given
+   credentials of the project runs a copy of the template of its own,
+   those nodes holding them, the template left as it was - and a node
+   the template does not have, or a credential the project does not, is
+   refused, as is a request naming a node twice. An
    account that is not a member, of a project that is not there, is
    refused, as is a template of another project, missing or inactive;
    nothing is saved.
 2. Configuring a rag: the agent's record gets the rag, ready and of
    the project, as its knowledge base, saved and cached, and its
-   template is left as it was; the agent, kept, is dropped and its nodes
-   released, so the next query builds it afresh, its node searching the
-   new rag. Another agent of the same template keeps its own rag, and
+   template is left as it was; the agent, kept, is dropped and destroyed,
+   its nodes released, so the next query builds it afresh, its node
+   searching the new rag. Another agent of the same template keeps its own rag, and
    stays kept. A refusal - no member, no such agent, a rag not there or
    not ready - saves nothing and drops nothing.
 
@@ -27,18 +32,24 @@ hands its calls to; everything between is real: `checkAccess`,
 """
 
 import asyncio
+import copy
+import weakref
 
 import pytest
+from pydantic import ValidationError
 from AgentManagerTest import (  # noqa: F401
     ACCOUNT_ID,
     AGENT_ID,
     ANSWER,
+    CREDENTIAL_ID,
     DELETED_AT,
     MISSING_ID,
     OTHER_PROJECT_ID,
     PROJECT_ID,
     QUESTION,
+    REPLY_NODE_ID,
     TEMPLATE_ID,
+    WHATSAPP_NODE_ID,
     agentManager,
     buildAgent,
     buildReplyNode,
@@ -50,8 +61,12 @@ from AgentManagerTest import (  # noqa: F401
 )
 
 from agents import service
-from agents.agentStore import AGENT_TEMPLATES, AGENTS
-from agents.model import ConfigureAgentResponse, ConfigureRagResponse
+from agents.agentStore import AGENT_TEMPLATES, AGENTS, CREDENTIALS
+from agents.model import (
+    ConfigureAgentRequest,
+    ConfigureAgentResponse,
+    ConfigureRagResponse,
+)
 from documentProcessing import utilities
 from documentProcessing.ragStrategy import RAG_STATUS_READY
 
@@ -60,6 +75,26 @@ OLD_RAG_ID = "9c1d4e7a-2b3f-4a6e-8d5c-1f0e9b8a7c62"
 PLATFORM_TEMPLATE_ID = "e7b2c9d4-5a1f-4c8e-b3d6-0a9f8e7d6c51"
 OTHER_AGENT_ID = "1e6b9f3a-7c2d-4a8e-b5f1-0d3c9e8a2b47"
 AGENT_NAME = "Acme support"
+AGENT_DESCRIPTION = "Answers Acme's customers."
+# A credential of the project the template's nodes do not hold yet.
+NEW_CREDENTIAL_ID = "2a9d6c3e-8f41-4b7a-9e05-6c1d3f8b2a70"
+
+
+def buildNodesAnswered(replyCredentialId: str | None) -> list[dict]:
+    """The template's nodes as the answer lists them: reply, with the
+    credential given, and WhatsApp, with the template's own."""
+    return [
+        {
+            "nodeId": REPLY_NODE_ID,
+            "name": "reply",
+            "credentialId": replyCredentialId,
+        },
+        {
+            "nodeId": WHATSAPP_NODE_ID,
+            "name": "whatsapp",
+            "credentialId": CREDENTIAL_ID,
+        },
+    ]
 
 
 def buildMembership() -> list[tuple[str, dict]]:
@@ -86,6 +121,17 @@ def buildRag(**overrides) -> dict:
     return rag
 
 
+def buildCredential(**overrides) -> dict:
+    """A credential of the project."""
+    credential = {
+        "_id": NEW_CREDENTIAL_ID,
+        "project_id": PROJECT_ID,
+        "name": "Acme WhatsApp",
+    }
+    credential.update(overrides)
+    return credential
+
+
 def buildSearchingTemplate() -> dict:
     """The project's template, its reply node searching the agent's
     rag."""
@@ -103,16 +149,23 @@ def members(firestore) -> None:
     firestore.put(utilities.RAGS, buildRag())
 
 
-def configureAgent(templateId: str = TEMPLATE_ID, **ids) -> dict:
+def configureAgent(
+    templateId: str = TEMPLATE_ID,
+    description: str | None = None,
+    nodeCredentials: dict[str, str] | None = None,
+    **ids,
+) -> dict:
     """The service configuring an agent named AGENT_NAME, running
-    `templateId`, for the account and project `ids` say, else the
-    member's."""
+    `templateId`, with `description` and `nodeCredentials` if given, for
+    the account and project `ids` say, else the member's."""
     return asyncio.run(
         service.configureAgent(
             ids.get("accountUuid", ACCOUNT_ID),
             ids.get("projectId", PROJECT_ID),
             AGENT_NAME,
             templateId,
+            description,
+            nodeCredentials,
         )
     )
 
@@ -153,9 +206,12 @@ class TestConfigureAgent:
             "projectId": PROJECT_ID,
             "templateId": TEMPLATE_ID,
             "name": AGENT_NAME,
+            "description": None,
             "status": "active",
+            "nodes": buildNodesAnswered(None),
         }
         stored = firestore.records[AGENTS][agentId]
+        assert "description" not in stored
         assert {
             key: stored[key]
             for key in ("project_id", "template_id", "name", "status")
@@ -205,6 +261,94 @@ class TestConfigureAgent:
             service.queryAgent(PROJECT_ID, agentId, QUESTION)
         )
         assert answered["answer"] == ANSWER
+
+    def testAgentKeepsItsDescription(
+        self, serviceManager, firestore, members
+    ):
+        configured = configureAgent(description=AGENT_DESCRIPTION)
+
+        ConfigureAgentResponse(**configured)
+        assert configured["description"] == "Answers Acme's customers."
+        stored = firestore.records[AGENTS][configured["agentId"]]
+        assert stored["description"] == "Answers Acme's customers."
+        assert stored["template_id"] == TEMPLATE_ID
+
+    def testNodesAreFormedWithTheCredentialsNamed(
+        self, serviceManager, firestore, members
+    ):
+        firestore.put(CREDENTIALS, buildCredential())
+        template = firestore.records[AGENT_TEMPLATES][TEMPLATE_ID]
+        templateBefore = copy.deepcopy(template)
+
+        configured = configureAgent(
+            nodeCredentials={REPLY_NODE_ID: NEW_CREDENTIAL_ID}
+        )
+
+        ConfigureAgentResponse(**configured)
+        copyId = configured["templateId"]
+        assert copyId != TEMPLATE_ID
+        assert configured["nodes"] == buildNodesAnswered(
+            "2a9d6c3e-8f41-4b7a-9e05-6c1d3f8b2a70"
+        )
+        copied = firestore.records[AGENT_TEMPLATES][copyId]
+        assert copied["project_id"] == PROJECT_ID
+        assert [node["credential_id"] for node in copied["nodes"]] == [
+            "2a9d6c3e-8f41-4b7a-9e05-6c1d3f8b2a70",
+            CREDENTIAL_ID,
+        ]
+        assert copied["edges"] == templateBefore["edges"]
+        assert firestore.records[AGENT_TEMPLATES][TEMPLATE_ID] == (
+            templateBefore
+        )
+        agentId = configured["agentId"]
+        assert firestore.records[AGENTS][agentId]["template_id"] == copyId
+        assert firestore.batches == [
+            [(AGENT_TEMPLATES, copyId), (AGENTS, agentId)]
+        ]
+        answered = asyncio.run(
+            service.queryAgent(PROJECT_ID, agentId, QUESTION)
+        )
+        assert answered["answer"] == ANSWER
+
+    @pytest.mark.parametrize(
+        ("credential", "nodeId", "message"),
+        [
+            (buildCredential(), MISSING_ID, "has no node"),
+            (None, REPLY_NODE_ID, "has no credential"),
+            (
+                buildCredential(project_id=OTHER_PROJECT_ID),
+                REPLY_NODE_ID,
+                "has no credential",
+            ),
+            (
+                buildCredential(deleted_at=DELETED_AT),
+                REPLY_NODE_ID,
+                "has no credential",
+            ),
+        ],
+        ids=["noSuchNode", "noSuchCredential", "anotherProjects", "deleted"],
+    )
+    def testNodeOrCredentialThatIsNotThereIsRefused(
+        self, serviceManager, firestore, members, credential, nodeId, message
+    ):
+        if credential is not None:
+            firestore.put(CREDENTIALS, credential)
+
+        refused = configureAgent(
+            nodeCredentials={nodeId: NEW_CREDENTIAL_ID}
+        )
+
+        assert refused["errorKind"] == service.ERROR_NOT_FOUND
+        assert message in refused["error"]
+        assert firestore.batches == []
+
+    def testRequestNamingANodeTwiceIsRefused(self):
+        node = {"nodeId": REPLY_NODE_ID, "credentialId": NEW_CREDENTIAL_ID}
+        body = {"name": AGENT_NAME, "templateId": TEMPLATE_ID}
+
+        ConfigureAgentRequest(**body, nodes=[node])
+        with pytest.raises(ValidationError, match="more than once"):
+            ConfigureAgentRequest(**body, nodes=[node, node])
 
     @pytest.mark.parametrize(
         ("ids", "errorKind"), ACCESS_CASES.values(), ids=ACCESS_CASES.keys()
@@ -292,6 +436,8 @@ class TestConfigureRag:
         before = asyncio.run(serviceManager.getAgent(PROJECT_ID, AGENT_ID))
         [node] = before.nodes
         assert node.config["rag"]["rag_id"] == OLD_RAG_ID
+        beforeAgent = weakref.ref(before)
+        del before
         other = asyncio.run(
             serviceManager.getAgent(PROJECT_ID, OTHER_AGENT_ID)
         )
@@ -299,11 +445,13 @@ class TestConfigureRag:
         configureRag()
 
         assert list(serviceManager.agents) == [OTHER_AGENT_ID]
-        assert before.nodes == []
+        # Dropped, and destroyed with its node, as nothing else held it.
+        assert beforeAgent() is None
         assert node not in serviceManager.nodeManager.reservedNodes
+        assert node.config == {}
         after = asyncio.run(serviceManager.getAgent(PROJECT_ID, AGENT_ID))
-        assert after is not before
         [afterNode] = after.nodes
+        assert afterNode is not node
         assert afterNode.config["rag"] == {
             "project_id": PROJECT_ID,
             "rag_id": RAG_ID,

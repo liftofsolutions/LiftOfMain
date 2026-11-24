@@ -18,27 +18,22 @@ config - then checks what is reserved, and what is left once released.
 3. Configure: a node takes its own copies of the credential and config,
    and deconfigure deletes them - cleared, so nothing holding them keeps
    them - leaving the borrower's own alone.
-4. Reserving: two borrowers at once get two nodes.
-5. Releasing: the node is deconfigured and reserved again for its
-   template node, holding the next borrower's credential alone; another
-   template node - another id, name or handler - gets a node of its own;
-   a node released twice, or never reserved here, is refused, so it is
-   never reserved twice at once.
-6. Free nodes: a node is created and saved when none of its template
-   node is free, so the nodes grow as agents need them; only the free
-   ones are capped - five per handler, whichever template nodes they are
-   - and past that, the one free longest is destroyed, leaves the
-   manager's nodes, and is never reserved again.
-7. About: a node describes itself in LangChain's tool format, by its name
+4. On demand: every reservation builds a new node, so two borrowers at
+   once get two, and the next borrower never gets a released one; the
+   manager keeps no node, free or reserved.
+5. Releasing: the node is deconfigured - its credential and config
+   cleared - and its id and name stay.
+6. About: a node describes itself in LangChain's tool format, by its name
    and its config's description or its own, and a LangChain chat model
    takes it as a tool.
-8. Never shown: no log line, repr or about of a node shows its
+7. Never shown: no log line, repr or about of a node shows its
    credential, or even that it holds one.
-9. In LangGraph: reserved nodes run as the nodes of a compiled graph, as
-   an agent will run them; the next run, given the same node, sends from
-   its own number alone; and two runs at once keep their own credentials.
-10. Node classes: every node class written in `agents.nodes` is in
-    NODE_CLASSES, under its own handler, once.
+8. In LangGraph: reserved nodes run as the nodes of a compiled graph, as
+   an agent will run them, and are deconfigured once the run is over;
+   the next run gets nodes of its own, sending from its own number
+   alone; and two runs at once keep their own credentials.
+9. Node classes: every node class written in `agents.nodes` is in
+   NODE_CLASSES, under its own handler, once.
 
     uv run pytest Btest/agents -q
 """
@@ -81,7 +76,6 @@ class WhatsAppNode(NodeBase):
     handler = "whatsapp"
     requiresCredential = True
     description = WHATSAPP_ABOUT
-    destroyed = False
 
     async def __call__(self, state: dict) -> dict:
         """Record the last message as sent, by number and api version."""
@@ -93,10 +87,6 @@ class WhatsAppNode(NodeBase):
             "text": state["messages"][-1].content,
         }
         return {"sent": [sent]}
-
-    def destroy(self) -> None:
-        """Note that the manager destroyed it."""
-        self.destroyed = True
 
 
 class EchoChatNode(NodeBase):
@@ -171,13 +161,13 @@ def buildReplyReservation(**overrides) -> dict:
     return reservation
 
 
-def buildNodeManager(**overrides) -> NodeManager:
-    """A manager of the two test nodes, none of them built yet."""
+def buildNodeManager() -> NodeManager:
+    """A manager of the two test nodes."""
     nodeClasses = {
         nodeClass.handler: nodeClass
         for nodeClass in (WhatsAppNode, EchoChatNode)
     }
-    return NodeManager(nodeClasses, **overrides)
+    return NodeManager(nodeClasses)
 
 
 def subclassesOf(baseClass: type) -> list[type]:
@@ -187,11 +177,6 @@ def subclassesOf(baseClass: type) -> list[type]:
         subclasses.append(subclass)
         subclasses.extend(subclassesOf(subclass))
     return subclasses
-
-
-def freeNodesOf(nodeManager: NodeManager, handler: str) -> list[NodeBase]:
-    """The free nodes of `handler`, the one free longest first."""
-    return list(nodeManager.freeNodesByHandler[handler])
 
 
 def assertShowsNoCredential(text: str) -> None:
@@ -212,8 +197,11 @@ def buildGraph(reply: NodeBase, whatsapp: NodeBase):
     return graph.compile()
 
 
-async def runAgent(nodeManager: NodeManager, credential: Credential) -> dict:
-    """One run, as an agent will make it; the state it ends in.
+async def runAgent(
+    nodeManager: NodeManager, credential: Credential
+) -> tuple[dict, list[NodeBase]]:
+    """One run, as an agent will make it; the state it ends in, and the
+    nodes it ran on.
 
     Reserves the nodes, builds the graph from them, runs it on QUESTION,
     and releases the nodes.
@@ -224,7 +212,8 @@ async def runAgent(nodeManager: NodeManager, credential: Credential) -> dict:
     )
     try:
         graph = buildGraph(reply, whatsapp)
-        return await graph.ainvoke({"messages": [HumanMessage(QUESTION)]})
+        state = await graph.ainvoke({"messages": [HumanMessage(QUESTION)]})
+        return state, [reply, whatsapp]
     finally:
         nodeManager.releaseNode(reply)
         nodeManager.releaseNode(whatsapp)
@@ -243,7 +232,6 @@ class TestCredentials:
         assert isinstance(node, WhatsAppNode)
         assert node._credential.reveal("access_token") == "acme-secret-token"
         assert node.config == buildConfig()
-        assert nodeManager.reservedNodes == {node}
 
     @pytest.mark.parametrize(
         "credential", [None, Credential({})], ids=["none", "empty"]
@@ -259,7 +247,6 @@ class TestCredentials:
             )
 
         assert "needs a credential" in str(raised.value)
-        assert nodeManager.reservedNodes == set()
 
     def testPlainDictIsRefusedAsACredential(self):
         nodeManager = buildNodeManager()
@@ -272,7 +259,6 @@ class TestCredentials:
 
         assert "must be a Credential" in str(raised.value)
         assertShowsNoCredential(str(raised.value))
-        assert nodeManager.reservedNodes == set()
 
     def testNodeThatTakesNoCredentialIsReservedWithoutOne(self):
         nodeManager = buildNodeManager()
@@ -293,7 +279,6 @@ class TestCredentials:
             )
 
         assert "takes no credential" in str(raised.value)
-        assert nodeManager.reservedNodes == set()
 
     def testUnknownHandlerIsRefused(self):
         nodeManager = buildNodeManager()
@@ -302,21 +287,6 @@ class TestCredentials:
             nodeManager.reserveNode("line", **buildWhatsAppReservation())
 
         assert "'line'" in str(raised.value)
-
-    def testRefusalTakesNoFreeNode(self):
-        nodeManager = buildNodeManager()
-        node = nodeManager.reserveNode(
-            "whatsapp", **buildWhatsAppReservation()
-        )
-        nodeManager.releaseNode(node)
-
-        with pytest.raises(NodeManagerError):
-            nodeManager.reserveNode(
-                "whatsapp", **buildWhatsAppReservation(credential=None)
-            )
-
-        assert freeNodesOf(nodeManager, "whatsapp") == [node]
-        assert nodeManager.reservedNodes == set()
 
 
 class TestIdentity:
@@ -375,7 +345,6 @@ class TestIdentity:
             )
 
         assert "not a slug" in str(raised.value)
-        assert nodeManager.reservedNodes == set()
 
     @pytest.mark.parametrize("nodeId", ["", None])
     def testNodeWithoutATemplateIdIsRefused(self, nodeId):
@@ -387,7 +356,6 @@ class TestIdentity:
             )
 
         assert "template node's id" in str(raised.value)
-        assert nodeManager.reservedNodes == set()
 
 
 class TestConfigure:
@@ -432,8 +400,8 @@ class TestConfigure:
         assert config == buildConfig()
 
 
-class TestReserving:
-    """Who else can have a reserved node meanwhile."""
+class TestOnDemand:
+    """Every reservation is a new node; the manager keeps none."""
 
     def testTwoBorrowersAtOnceGetTwoNodes(self):
         nodeManager = buildNodeManager()
@@ -453,28 +421,8 @@ class TestReserving:
         assert second._credential.reveal("access_token") == (
             "beta-secret-token"
         )
-        assert nodeManager.reservedNodes == {first, second}
 
-
-class TestReleasing:
-    """What is left of a node released, and who gets it next."""
-
-    def testReleaseDeconfiguresTheNode(self):
-        nodeManager = buildNodeManager()
-        node = nodeManager.reserveNode(
-            "whatsapp", **buildWhatsAppReservation()
-        )
-        heldCredential = node._credential
-
-        assert nodeManager.releaseNode(node) is True
-
-        assert node._credential is None
-        assert node.config == {}
-        assert not heldCredential
-        assert nodeManager.reservedNodes == set()
-        assert freeNodesOf(nodeManager, "whatsapp") == [node]
-
-    def testTemplateNodeGetsItsNodeBackWithOnlyItsCredential(self):
+    def testNextBorrowerGetsANewNodeWithOnlyItsCredential(self):
         nodeManager = buildNodeManager()
         node = nodeManager.reserveNode(
             "whatsapp",
@@ -493,7 +441,7 @@ class TestReleasing:
             ),
         )
 
-        assert nextNode is node
+        assert nextNode is not node
         assert nextNode._credential.reveal("access_token") == (
             "beta-secret-token"
         )
@@ -501,150 +449,52 @@ class TestReleasing:
             nextNode._credential.reveal("refresh_token")
         assert nextNode.config == {"api_version": "v22.0"}
 
-    @pytest.mark.parametrize(
-        "handler, reservation",
-        [
-            ("whatsapp", buildWhatsAppReservation(nodeId=REPLY_NODE_ID)),
-            ("whatsapp", buildWhatsAppReservation(name="notify")),
-            (
-                "echo_chat",
-                buildReplyReservation(nodeId=WHATSAPP_NODE_ID, name="whatsapp"),
-            ),
-        ],
-        ids=["anotherId", "renamed", "anotherHandler"],
-    )
-    def testOtherTemplateNodeGetsANodeOfItsOwn(self, handler, reservation):
+    def testManagerKeepsNoNode(self):
+        nodeManager = buildNodeManager()
+        nodeClasses = dict(nodeManager.nodeClasses)
+        node = nodeManager.reserveNode(
+            "whatsapp", **buildWhatsAppReservation()
+        )
+
+        assert vars(nodeManager) == {"nodeClasses": nodeClasses}
+        nodeManager.releaseNode(node)
+        assert vars(nodeManager) == {"nodeClasses": nodeClasses}
+
+
+class TestReleasing:
+    """What is left of a node released."""
+
+    def testReleaseDeconfiguresTheNode(self):
         nodeManager = buildNodeManager()
         node = nodeManager.reserveNode(
             "whatsapp", **buildWhatsAppReservation()
         )
+        heldCredential = node._credential
+
         nodeManager.releaseNode(node)
 
-        otherNode = nodeManager.reserveNode(handler, **reservation)
+        assert node._credential is None
+        assert node.config == {}
+        assert not heldCredential
 
-        assert otherNode is not node
-        assert freeNodesOf(nodeManager, "whatsapp") == [node]
+    def testNodeThatFailsToConfigureIsDeconfigured(self, monkeypatch):
+        built = []
 
-    def testNodeReleasedTwiceIsNeverReservedTwiceAtOnce(self):
-        nodeManager = buildNodeManager()
-        node = nodeManager.reserveNode(
-            "whatsapp", **buildWhatsAppReservation()
-        )
-        nodeManager.releaseNode(node)
+        def failToConfigure(node, credential, config):
+            built.append(node)
+            NodeBase.configure(node, credential, config)
+            raise ValueError("No such api version.")
 
-        assert nodeManager.releaseNode(node) is False
+        monkeypatch.setattr(WhatsAppNode, "configure", failToConfigure)
 
-        first = nodeManager.reserveNode(
-            "whatsapp", **buildWhatsAppReservation()
-        )
-        second = nodeManager.reserveNode(
-            "whatsapp", **buildWhatsAppReservation()
-        )
-        assert first is not second
-
-    def testNodeNotReservedHereIsRefused(self):
-        nodeManager = buildNodeManager()
-        stranger = WhatsAppNode(WHATSAPP_NODE_ID, "whatsapp")
-
-        assert nodeManager.releaseNode(stranger) is False
-
-        assert freeNodesOf(nodeManager, "whatsapp") == []
-
-
-class TestFreeNodes:
-    """Nodes created as needed, and the free ones held to a limit."""
-
-    def testNodeIsCreatedAndSavedWhenNoneIsFree(self, caplog):
-        caplog.set_level(logging.INFO, logger=MANAGER_LOGGER)
-        nodeManager = buildNodeManager()
-
-        node = nodeManager.reserveNode(
-            "whatsapp", **buildWhatsAppReservation()
-        )
-
-        assert nodeManager.nodes == {node}
-        assert caplog.text.count("Created a new node") == 1
-
-    def testNodesGrowWhileTheFreeOnesStayWithinTheLimit(self, caplog):
-        caplog.set_level(logging.INFO, logger=MANAGER_LOGGER)
-        nodeManager = buildNodeManager()
-        nodes = [
-            nodeManager.reserveNode("whatsapp", **buildWhatsAppReservation())
-            for _ in range(8)
-        ]
-
-        assert nodeManager.nodes == set(nodes)
-
-        for node in nodes:
-            nodeManager.releaseNode(node)
-
-        assert freeNodesOf(nodeManager, "whatsapp") == nodes[3:]
-        assert nodeManager.nodes == set(nodes[3:])
-        assert caplog.text.count("Created a new node") == 8
-        assert caplog.text.count("Destroyed") == 3
-
-    def testFiveAreKeptAndTheOneFreeLongestIsDestroyed(self):
-        nodeManager = buildNodeManager()
-        nodes = [
-            nodeManager.reserveNode("whatsapp", **buildWhatsAppReservation())
-            for _ in range(6)
-        ]
-
-        for node in nodes:
-            nodeManager.releaseNode(node)
-
-        assert freeNodesOf(nodeManager, "whatsapp") == nodes[1:]
-        assert [node.destroyed for node in nodes] == [True] + [False] * 5
-        assert nodes[0] not in nodeManager.nodes
-
-    def testDestroyedNodeIsNeverReservedAgain(self):
-        nodeManager = buildNodeManager()
-        nodes = [
-            nodeManager.reserveNode("whatsapp", **buildWhatsAppReservation())
-            for _ in range(6)
-        ]
-        for node in nodes:
-            nodeManager.releaseNode(node)
-
-        reservedAgain = [
-            nodeManager.reserveNode("whatsapp", **buildWhatsAppReservation())
-            for _ in range(6)
-        ]
-
-        assert nodes[0] not in reservedAgain
-        assert set(nodes[1:]) < set(reservedAgain)
-
-    def testLimitCountsEveryTemplateNodeOfTheHandler(self):
-        nodeManager = buildNodeManager(maxFreeNodes=2)
-        nodes = [
-            nodeManager.reserveNode(
-                "whatsapp", **buildWhatsAppReservation(name=name)
+        with pytest.raises(ValueError):
+            buildNodeManager().reserveNode(
+                "whatsapp", **buildWhatsAppReservation()
             )
-            for name in ["first", "second", "third"]
-        ]
 
-        for node in nodes:
-            nodeManager.releaseNode(node)
-
-        assert freeNodesOf(nodeManager, "whatsapp") == nodes[1:]
-        assert nodes[0].destroyed is True
-        third = nodeManager.reserveNode(
-            "whatsapp", **buildWhatsAppReservation(name="third")
-        )
-        assert third is nodes[2]
-
-    def testLimitIsCountedPerHandler(self):
-        nodeManager = buildNodeManager(maxFreeNodes=1)
-        whatsapp = nodeManager.reserveNode(
-            "whatsapp", **buildWhatsAppReservation()
-        )
-        reply = nodeManager.reserveNode("echo_chat", **buildReplyReservation())
-
-        nodeManager.releaseNode(whatsapp)
-        nodeManager.releaseNode(reply)
-
-        assert freeNodesOf(nodeManager, "whatsapp") == [whatsapp]
-        assert freeNodesOf(nodeManager, "echo_chat") == [reply]
+        [node] = built
+        assert node._credential is None
+        assert node.config == {}
 
 
 class TestAbout:
@@ -695,17 +545,14 @@ class TestCredentialNeverShown:
     def testLogsNeverShowACredential(self, caplog):
         caplog.set_level(logging.DEBUG, logger=MANAGER_LOGGER)
         nodeManager = buildNodeManager()
-        stranger = WhatsAppNode(WHATSAPP_NODE_ID, "whatsapp")
-        stranger.configure(buildCredential(), buildConfig())
 
         node = nodeManager.reserveNode(
             "whatsapp", **buildWhatsAppReservation()
         )
         nodeManager.releaseNode(node)
-        nodeManager.releaseNode(stranger)
 
         levels = [record.levelname for record in caplog.records]
-        assert levels == ["INFO", "DEBUG", "DEBUG", "ERROR"]
+        assert levels == ["DEBUG", "DEBUG"]
         assertShowsNoCredential(caplog.text)
 
     def testReprSaysNothingOfTheCredential(self):
@@ -738,7 +585,7 @@ class TestRunningInLangGraph:
     def testReservedNodesRunAsTheGraphsNodes(self):
         nodeManager = buildNodeManager()
 
-        state = asyncio.run(runAgent(nodeManager, buildCredential()))
+        state, _ = asyncio.run(runAgent(nodeManager, buildCredential()))
 
         assert [message.content for message in state["messages"]] == [
             QUESTION,
@@ -751,31 +598,31 @@ class TestRunningInLangGraph:
     def testNodesAreDeconfiguredOnceTheRunIsOver(self):
         nodeManager = buildNodeManager()
 
-        asyncio.run(runAgent(nodeManager, buildCredential()))
+        _, nodes = asyncio.run(runAgent(nodeManager, buildCredential()))
 
-        [whatsapp] = freeNodesOf(nodeManager, "whatsapp")
-        assert whatsapp._credential is None
-        assert whatsapp.config == {}
-        assert nodeManager.reservedNodes == set()
+        for node in nodes:
+            assert node._credential is None
+            assert node.config == {}
 
-    def testNextRunGetsTheNodeWithOnlyItsOwnCredential(self):
+    def testNextRunGetsNodesOfItsOwnWithOnlyItsCredential(self):
         nodeManager = buildNodeManager()
-        asyncio.run(runAgent(nodeManager, buildCredential()))
-        [whatsapp] = freeNodesOf(nodeManager, "whatsapp")
+        _, firstNodes = asyncio.run(
+            runAgent(nodeManager, buildCredential())
+        )
 
-        state = asyncio.run(
+        state, nextNodes = asyncio.run(
             runAgent(
                 nodeManager, buildCredential(phone_number_id="444555666")
             )
         )
 
-        assert freeNodesOf(nodeManager, "whatsapp") == [whatsapp]
+        assert not set(firstNodes) & set(nextNodes)
         assert [sent["sender"] for sent in state["sent"]] == ["444555666"]
 
     def testTwoRunsAtOnceKeepTheirOwnCredentials(self):
         nodeManager = buildNodeManager()
 
-        async def runBoth() -> list[dict]:
+        async def runBoth() -> list[tuple[dict, list[NodeBase]]]:
             return await asyncio.gather(
                 runAgent(nodeManager, buildCredential()),
                 runAgent(
@@ -783,11 +630,11 @@ class TestRunningInLangGraph:
                 ),
             )
 
-        first, second = asyncio.run(runBoth())
+        (first, firstNodes), (second, secondNodes) = asyncio.run(runBoth())
 
         assert [sent["sender"] for sent in first["sent"]] == ["111222333"]
         assert [sent["sender"] for sent in second["sent"]] == ["444555666"]
-        assert len(freeNodesOf(nodeManager, "whatsapp")) == 2
+        assert not set(firstNodes) & set(secondNodes)
 
 
 class TestNodeClasses:

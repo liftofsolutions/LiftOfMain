@@ -27,15 +27,13 @@ and neither can change. The name is a slug, such as `reply` or
 `web_search`: the tool name a model knows it by. A graph holds the node
 under its id, as two nodes of a template may share a name.
 
-What changes is what a node holds for one reservation. The `NodeManager`
-reserves nodes and releases them: reserving one calls `configure`, which
-gives it its own copies of the borrower's credential and config, and
-releasing it calls `deconfigure`, which deletes both before anyone else
-can reserve it. A subclass that builds something from them - a client, a
-model - builds it in `configure`, after the base's, and deletes it in
-`deconfigure`, before the base's. Anything a node keeps from one
-reservation to the next must never be built from a credential, and is
-freed in `destroy`, called when the manager does not keep the node.
+What a node holds is for its one reservation. The `NodeManager` builds a
+node on demand and releases it: reserving one builds it and calls
+`configure`, which gives it its own copies of the borrower's credential
+and config, and releasing it calls `deconfigure`, which deletes both; the
+node is then dropped, never reserved again. A subclass that builds
+something from them - a client, a model - builds it in `configure`,
+after the base's, and deletes it in `deconfigure`, before the base's.
 
 A credential is a `Credential`, which is never shown, and the node keeps
 it protected in `_credential`: its own code reads a value with
@@ -64,7 +62,7 @@ from agents.nodes.credential import Credential
 
 
 class NodeBase(ABC):
-    """One node of an agent's template, reserved by one agent at a time."""
+    """One node of an agent's template, built for one reservation."""
 
     handler: ClassVar[str] = ""
     requiresCredential: ClassVar[bool] = False
@@ -117,13 +115,6 @@ class NodeBase(ABC):
             self._credential.clear()
         self._credential = None
         self.config.clear()
-
-    def destroy(self) -> None:
-        """Free what the node keeps from one reservation to the next.
-
-        Called on a released node the manager does not keep. A node keeps
-        nothing by default, so there is nothing to free.
-        """
 
     def about(self) -> dict:
         """The node, described for a model, in LangChain's tool format.

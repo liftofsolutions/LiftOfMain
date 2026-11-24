@@ -118,6 +118,11 @@ only the project it belongs to.
 | `POST` | `/agents/{accountUuid}/{projectId}`                 | Make an agent, running a template |
 | `POST` | `/agents/{accountUuid}/{projectId}/{agentId}/rag`   | Give the agent's template a rag  |
 | `POST` | `/agents/{projectId}/{agentId}/query`               | The agent's answer to a message  |
+| `GET`  | `/agents/{projectId}/{agentId}/query?provider=whatsapp` | Meta's check of the webhook  |
+| `POST` | `/agents/{projectId}/{agentId}/query?provider=whatsapp` | A WhatsApp event: taken at once, answered on WhatsApp |
+
+An agent's query URL is its webhook too: with `provider`, the agent's io node of that provider - the node an
+enabled trigger points to - handles the call. An agent with none is `404 Page not found.`
 
 ```json
 {"name": "Acme support", "templateId": "8f32ea63-..."}

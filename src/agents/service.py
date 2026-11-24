@@ -1,6 +1,9 @@
 """Agents: configured by a member of their project, and asked by anyone.
 
-    await configureAgent(accountUuid, projectId, "Acme support", templateId)
+    await configureAgent(
+        accountUuid, projectId, "Acme support", templateId,
+        "Answers customers.", {nodeId: credentialId},
+    )
     await configureRag(accountUuid, projectId, agentId, ragId)
     await queryAgent(projectId, agentId, "Do you deliver to Pune?")
 
@@ -12,11 +15,16 @@ valid, and the account must be a member of it.
   template: one of the project's own, or a premade platform template,
   which is copied into the project first, as `db/agent-schema` says. A
   template of another project is not found; an inactive one is refused.
+  It may name credentials of the project for nodes of the template, by
+  node id: the agent then runs a copy of the template of its own, those
+  nodes holding their `credential_id`, so the template it was made from,
+  and its other agents, are left as they were. A node the template does
+  not have, or a credential the project does not, is not found.
 * `configureRag` gives an agent its knowledge base: a rag of the
   project, ready, in the agent's own record - `rag_enabled`, `rag_id` -
   so other agents of its template keep theirs. The agent, if kept in
-  this process, is dropped, so it is built afresh on its next query,
-  its nodes with `rag_search` searching that rag.
+  this process, is dropped, to be destroyed, so it is built afresh on
+  its next query, its nodes with `rag_search` searching that rag.
 
 Records are read from Firestore itself, not the cache, as they are about
 to be changed, and saved to both: see `agentStore`.
@@ -29,6 +37,14 @@ the agent keeps the conversation's chat history between its answers;
 one that names none is of no conversation. An agent the project does not
 have is answered as not found, one that cannot run - paused, say - as a
 conflict.
+
+A provider - WhatsApp - reaches an agent at its query URL too, naming
+itself: `receiveProviderEvent` takes its event, answered in the
+background and sent back by the agent's io node of it, as
+`providerEvents` does. An agent with no enabled trigger of the provider,
+or none at all, is PAGE_NOT_FOUND; a call that fails the node's check,
+forbidden. The provider's check of the webhook is not answered for now:
+GitHub issue #15.
 
 Errors are returned, never raised: `{"error": message, "errorKind":
 kind}`, logged, with `errorKind` one of the `ERROR_*` constants for the
@@ -44,8 +60,9 @@ from agents.agent import (
     AgentNotFoundError,
     AgentNotRunnableError,
 )
+from agents import providerEvents
 from agents.agentManager import getAgentManager
-from agents.agentStore import AGENT_TEMPLATES, AGENTS
+from agents.agentStore import AGENT_TEMPLATES, AGENTS, CREDENTIALS
 from documentProcessing import service as ragService
 from documentProcessing import utilities
 from documentProcessing.ragStrategy import RAG_STATUS_READY
@@ -65,16 +82,47 @@ def errorResult(errorKind: str, message: str) -> dict:
     return {"error": message, "errorKind": errorKind}
 
 
+async def missingNodeCredential(
+    projectId: str, template: dict, nodeCredentials: dict[str, str]
+) -> str | None:
+    """What `nodeCredentials` - credential ids by node id - names that is
+    not there: a node `template` does not have, or a credential that is
+    not `projectId`'s; None if nothing."""
+    nodeIds = {node["id"] for node in template.get("nodes", [])}
+    for nodeId, credentialId in nodeCredentials.items():
+        if nodeId not in nodeIds:
+            return f"Template {template['_id']!r} has no node {nodeId!r}."
+        credential = await agentStore.fetchStored(CREDENTIALS, credentialId)
+        if (
+            credential is None
+            or credential.get("project_id") != projectId
+            or credential.get("deleted_at") is not None
+        ):
+            return (
+                f"Project {projectId!r} has no credential {credentialId!r}."
+            )
+    return None
+
+
 async def configureAgent(
-    accountUuid: str, projectId: str, name: str, templateId: str
+    accountUuid: str,
+    projectId: str,
+    name: str,
+    templateId: str,
+    description: str | None = None,
+    nodeCredentials: dict[str, str] | None = None,
 ) -> dict:
     """A new agent of `projectId`, named `name`, running the template
-    `templateId`, made by `accountUuid`, a member of the project.
+    `templateId`, made by `accountUuid`, a member of the project; with
+    its `description`, and `nodeCredentials` - credential ids by node
+    id - the credentials its nodes are formed with.
 
     A premade platform template is copied into the project, under a new
-    id, and the agent runs the copy; the copy and the agent are saved
-    together, so neither is saved without the other.
+    id, and the agent runs the copy; so is a template whose nodes are
+    given credentials, the copy's nodes holding them. The copy and the
+    agent are saved together, so neither is saved without the other.
     """
+    nodeCredentials = nodeCredentials or {}
     denied = await ragService.checkAccess(accountUuid, projectId)
     if denied is not None:
         return denied
@@ -92,9 +140,15 @@ async def configureAgent(
             ERROR_CONFLICT, f"Template {templateId!r} is inactive."
         )
 
+    missing = await missingNodeCredential(
+        projectId, template, nodeCredentials
+    )
+    if missing is not None:
+        return errorResult(ERROR_NOT_FOUND, missing)
+
     now = ragService.utcNow()
     records = []
-    if template.get("project_id") is None:
+    if template.get("project_id") is None or nodeCredentials:
         templateId = await ragService.generateUniqueId(AGENT_TEMPLATES)
         template = {
             **copy.deepcopy(template),
@@ -103,12 +157,16 @@ async def configureAgent(
             "created_at": now,
             "updated_at": now,
         }
+        for node in template.get("nodes", []):
+            if node["id"] in nodeCredentials:
+                node["credential_id"] = nodeCredentials[node["id"]]
         records.append((AGENT_TEMPLATES, template))
     agent = {
         "_id": await ragService.generateUniqueId(AGENTS),
         "project_id": projectId,
         "template_id": templateId,
         "name": name,
+        **({} if description is None else {"description": description}),
         "status": AGENT_STATUS_ACTIVE,
         "created_by": accountUuid,
         "created_at": now,
@@ -122,7 +180,16 @@ async def configureAgent(
         "projectId": projectId,
         "templateId": templateId,
         "name": name,
+        "description": description,
         "status": AGENT_STATUS_ACTIVE,
+        "nodes": [
+            {
+                "nodeId": node["id"],
+                "name": node["name"],
+                "credentialId": node.get("credential_id"),
+            }
+            for node in template.get("nodes", [])
+        ],
     }
 
 
@@ -192,3 +259,42 @@ async def queryAgent(
         "convoId": reply.convoId,
         "answer": reply.answer,
     }
+
+
+def providerErrorOf(error: Exception) -> dict:
+    """The error a provider's call is answered with: the page not found,
+    for anything missing, so nothing tells an agent with no trigger from
+    no agent; a conflict for an agent that cannot run; forbidden for a
+    call that is not the provider's."""
+    if isinstance(
+        error, (providerEvents.PageNotFoundError, AgentNotFoundError)
+    ):
+        LOGGER.info("Provider call not found: %s", error)
+        return errorResult(ERROR_NOT_FOUND, providerEvents.PAGE_NOT_FOUND)
+    if isinstance(error, AgentNotRunnableError):
+        return errorResult(ERROR_CONFLICT, str(error))
+    return errorResult(ERROR_FORBIDDEN, str(error))
+
+
+async def receiveProviderEvent(
+    projectId: str,
+    agentId: str,
+    provider: str,
+    body: bytes,
+    headers: dict,
+) -> dict:
+    """Take `provider`'s event for the agent: how many messages it holds,
+    which the agent answers in the background, sent back by its io node
+    of `provider`."""
+    try:
+        count = await providerEvents.receiveEvent(
+            projectId, agentId, provider, body, headers
+        )
+    except (
+        providerEvents.PageNotFoundError,
+        providerEvents.NotFromProviderError,
+        AgentNotFoundError,
+        AgentNotRunnableError,
+    ) as error:
+        return providerErrorOf(error)
+    return {"status": "accepted", "messages": count}

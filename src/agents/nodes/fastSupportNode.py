@@ -5,7 +5,7 @@ the same time.
     input -> fast_support -> history -> output
 
 The node does the guard's work and support's. It sends the message to
-its guard model - DeepSeek, thinking off - which passes it on or turns
+its guard model - an OpenAI model - which passes it on or turns
 it away, and meanwhile searches the agent's rag for the message, as it
 came in. Turned away, the guard's message is the node's answer, and
 nothing more is asked. Passed on, the search is added to `messages` as
@@ -15,8 +15,9 @@ call to the support model, not two, after the guard and the search,
 which take about as long as the slower of them.
 
 Its config is an `openai_chat` node's - its model, `system_prompt`,
-`max_tokens`, `rag_search` - with `guard`: `{"model", "system_prompt"}`,
-the guard's DeepSeek model and prompt.
+`max_tokens`, `rag_search`, `reasoning_effort` - with `guard`:
+`{"model", "system_prompt", "reasoning_effort"}`, the guard's OpenAI
+model, its prompt, and, optionally, how much it reasons.
 """
 
 import asyncio
@@ -40,9 +41,9 @@ from agents.nodes.credential import Credential
 from agents.nodes.specialNodes import OUTPUT_ABOUT, OUTPUT_NODE_ID
 from LLM import ChatModel, buildChatModel
 
-# The guard's provider, and its thinking off, as its picks need.
-GUARD_PROVIDER = "deepseek"
-GUARD_SETTINGS = {"extra_body": {"thinking": {"type": "disabled"}}}
+# The guard's provider, and the setting of its config it may change.
+GUARD_PROVIDER = "openai"
+GUARD_REASONING = "reasoning_effort"
 # What the guard picks between: support, or out, with its own message.
 SUPPORT_CHOICE = "support"
 GUARD_CHOICES = {
@@ -78,11 +79,14 @@ class FastSupportNode(OpenAIChatNode):
                 `configLLM.json` does not list.
         """
         super().configure(credential, config)
+        guard = self.config["guard"]
+        settings = (
+            {GUARD_REASONING: guard[GUARD_REASONING]}
+            if GUARD_REASONING in guard
+            else {}
+        )
         self.guardModel = buildChatModel(
-            DEFAULT_ROLE,
-            GUARD_PROVIDER,
-            self.config["guard"]["model"],
-            GUARD_SETTINGS,
+            DEFAULT_ROLE, GUARD_PROVIDER, guard["model"], settings
         )
 
     def deconfigure(self) -> None:

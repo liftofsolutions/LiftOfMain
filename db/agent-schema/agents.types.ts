@@ -146,6 +146,7 @@ export interface Agent {
   project_id: string;     // FK → projects._id
   template_id: string;    // FK → agent_templates._id, same project
   name: string;
+  description?: string;   // what the agent is for
   status: AgentStatus;
   rag_enabled?: boolean;  // its nodes with rag_search search rag_id
   rag_id?: string;        // FK → rags._id, same project; required when rag_enabled
