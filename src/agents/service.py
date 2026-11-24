@@ -38,13 +38,13 @@ one that names none is of no conversation. An agent the project does not
 have is answered as not found, one that cannot run - paused, say - as a
 conflict.
 
-A provider - WhatsApp - reaches an agent at its query URL too, naming
-itself: `receiveProviderEvent` takes its event, answered in the
+A provider - WhatsApp, LINE - reaches an agent at its query URL too,
+naming itself: `receiveProviderEvent` takes its event, answered in the
 background and sent back by the agent's io node of it, as
 `providerEvents` does. An agent with no enabled trigger of the provider,
 or none at all, is PAGE_NOT_FOUND; a call that fails the node's check,
-forbidden. The provider's check of the webhook is not answered for now:
-GitHub issue #15.
+forbidden. WhatsApp's check of the webhook is not answered for now:
+GitHub issue #15; LINE's is an event like any other.
 
 Errors are returned, never raised: `{"error": message, "errorKind":
 kind}`, logged, with `errorKind` one of the `ERROR_*` constants for the

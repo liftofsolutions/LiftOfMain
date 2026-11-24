@@ -1,9 +1,10 @@
-"""What a provider - WhatsApp - sends an agent: its events, each answered
-by the agent and sent back.
+"""What a provider - WhatsApp, LINE - sends an agent: its events, each
+answered by the agent and sent back.
 
 An agent's webhook is its query URL, with the provider named:
 
     POST /agents/{projectId}/{agentId}/query?provider=whatsapp
+    POST /agents/{projectId}/{agentId}/query?provider=line
 
 so an agent has one URL for every provider, and no new one to make for
 each. What the provider sends is handled by the agent's io nodes of it:
@@ -22,8 +23,9 @@ background, each in the conversation of its sender with that node,
 `convoIdOf`, its answer sent by the paired output node. An answer that
 fails is logged.
 
-The provider's check of the webhook - WhatsApp's GET with
-`hub.challenge` - is not answered for now: GitHub issue #15.
+LINE's check of the webhook is an event of no messages, taken as any
+is. WhatsApp's - the GET with `hub.challenge` - is not answered for
+now: GitHub issue #15.
 
 Nodes are configured for the call, and deconfigured once their work is
 done: their secrets are kept no longer. A secret is never logged.
@@ -38,11 +40,13 @@ from agents import agentStore
 from agents.agent import AgentNotRunnableError, mergeConfig
 from agents.agentManager import getAgentManager
 from agents.nodes.credential import Credential
+from agents.nodes.input.lineNode import LineInputNode, LineMessage
 from agents.nodes.input.whatsappNode import (
     WhatsAppInputNode,
     WhatsAppMessage,
 )
 from agents.nodes.nodeBase import NodeBase
+from agents.nodes.output.lineNode import LineOutputNode
 from agents.nodes.output.whatsappNode import WhatsAppOutputNode
 
 LOGGER = logging.getLogger(__name__)
@@ -50,8 +54,11 @@ LOGGER = logging.getLogger(__name__)
 # The io node classes that handle each provider, by the handler of its
 # node type: its input node's class, and its output node's.
 IO_NODE_CLASSES = {
-    WhatsAppInputNode.handler: (WhatsAppInputNode, WhatsAppOutputNode)
+    WhatsAppInputNode.handler: (WhatsAppInputNode, WhatsAppOutputNode),
+    LineInputNode.handler: (LineInputNode, LineOutputNode),
 }
+# A message an input node reads in, for its output node to answer.
+ProviderMessage = WhatsAppMessage | LineMessage
 # What a caller is told of a webhook with nothing behind it.
 PAGE_NOT_FOUND = "Page not found."
 # The namespace a conversation's id is drawn in, from its node and
@@ -224,7 +231,7 @@ async def answerMessages(
     projectId: str,
     agentId: str,
     ioNodes: IoNodes,
-    messages: list[WhatsAppMessage],
+    messages: list[ProviderMessage],
 ) -> None:
     """Have the agent answer each message, in its sender's conversation
     with the input node, and the output node send the answer back; then

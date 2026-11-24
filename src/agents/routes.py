@@ -21,12 +21,14 @@ The query URL is the agent's webhook too, for every provider, named by
 `provider` - so there is no URL to make for one:
 
     POST /agents/{projectId}/{agentId}/query?provider=whatsapp
+    POST /agents/{projectId}/{agentId}/query?provider=line
         the provider's event: taken at once, its messages answered in
         the background and sent back through the provider
 
 An agent with no enabled trigger of the provider is "Page not found.".
-The provider's check of the webhook - WhatsApp's GET with
-`hub.challenge` - is not answered for now: GitHub issue #15.
+LINE's check of the webhook is an event of no messages, taken as any
+is. WhatsApp's - the GET with `hub.challenge` - is not answered for
+now: GitHub issue #15.
 """
 
 import logging
@@ -216,9 +218,9 @@ async def configureRag(
     summary="Query an agent",
     description=(
         "With no `provider`, the body is a query, and the answer comes "
-        "back. With one - `whatsapp` - the body is that provider's event: "
-        "it is taken at once, and the agent's answers are sent back "
-        "through the provider."
+        "back. With one - `whatsapp` or `line` - the body is that "
+        "provider's event: it is taken at once, and the agent's answers "
+        "are sent back through the provider."
     ),
     openapi_extra=QUERY_BODY,
 )

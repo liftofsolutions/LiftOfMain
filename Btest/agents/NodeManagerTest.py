@@ -49,8 +49,11 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 
 from agents.nodeManager import NodeManager, NodeManagerError
 from agents.nodes import NODE_CLASSES, Credential, NodeBase
+from agents.providerEvents import IO_NODE_CLASSES
 
 MANAGER_LOGGER = "agents.nodeManager"
+# Where the io nodes live, out of NODE_CLASSES: no agent reserves them.
+IO_NODE_PACKAGES = ("agents.nodes.input.", "agents.nodes.output.")
 
 # The example template's reply and whatsapp nodes.
 REPLY_NODE_ID = "473b3fd6-5886-40fc-bd5a-a5d414591bf2"
@@ -645,12 +648,25 @@ class TestNodeClasses:
             nodeClass
             for nodeClass in subclassesOf(NodeBase)
             if nodeClass.__module__.startswith("agents.nodes.")
+            and not nodeClass.__module__.startswith(IO_NODE_PACKAGES)
             and nodeClass.handler
         ]
 
         byHandler = {nodeClass.handler: nodeClass for nodeClass in written}
         assert len(byHandler) == len(written)
         assert byHandler == NODE_CLASSES
+
+    def testNoIoNodeIsReserved(self):
+        ioClasses = [
+            nodeClass
+            for pair in IO_NODE_CLASSES.values()
+            for nodeClass in pair
+        ]
+
+        assert ioClasses
+        for nodeClass in ioClasses:
+            assert nodeClass.__module__.startswith(IO_NODE_PACKAGES)
+            assert nodeClass.handler not in NODE_CLASSES
 
     def testManagerReservesFromTheDict(self):
         assert NodeManager().nodeClasses is NODE_CLASSES

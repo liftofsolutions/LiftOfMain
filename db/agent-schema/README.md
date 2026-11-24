@@ -225,25 +225,29 @@ none is made for a trigger:
 
 ```
 POST /agents/{projectId}/{agentId}/query?provider=whatsapp   the provider's event
+POST /agents/{projectId}/{agentId}/query?provider=line
 ```
 
-The provider's check of the webhook - WhatsApp's `GET` with `hub.challenge` - is not answered for now: GitHub
-issue #15.
+WhatsApp's check of the webhook - its `GET` with `hub.challenge` - is not answered for now: GitHub issue #15.
+LINE's - the console's "Verify" - is a signed event of no messages, taken as any event is.
 
 1. Build the agent (or use the one kept); it must belong to `projectId`, be `active` and not deleted.
 2. Find its io nodes of the provider: the nodes an enabled trigger points to, whose node type's `handler` is the
    provider's. None - or no agent - is `404 Page not found.`, alike.
 3. Build each with its merged config, its secrets in its `Credential`, and hand it the call: the node does all
    the provider's own work. A `whatsapp` node checks an event's `X-Hub-Signature-256` with its `app_secret`, and
-   reads the text messages sent to its `phone_number_id`. A call failing every node's check is `403`.
+   reads the text messages sent to its `phone_number_id`. A `line` node checks an event's `X-Line-Signature`
+   with its `channel_secret`, and reads the text messages users send the account one to one. A call failing
+   every node's check is `403`.
 4. Acknowledge an event with `200 {"status": "accepted", "messages": n}` at once; the agent answers each message
    in the background, in its sender's conversation with that node, and the node sends the answer back
-   (`access_token`, Graph API `api_version`).
+   (`access_token`, Graph API `api_version`); a `line` node replies with the message's reply token
+   (`channel_access_token`), free of the account's message quota, good for about a minute.
 
 The URL is not a secret; the signature check is the authentication. For now a `whatsapp` node keeps its
 secrets - `access_token`, `app_secret`, `verify_token` - in its config, moved into its credential as it is
-built, and never logged; they move to `credentials` once that collection is built. LINE and email are nodes of
-their own, on the same URL.
+built, and never logged, as a `line` node keeps `channel_secret` and `channel_access_token`; they move to
+`credentials` once that collection is built. Email is a node of its own, on the same URL.
 
 **Cron.** One scheduler job per `schedule` trigger calls the same URL on the node's `config.cron`.
 
