@@ -9,6 +9,7 @@ turn into a status code.
 """
 
 import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -53,6 +54,9 @@ MATCH_FIELDS = [ragStrategy.PINECONE_TEXT_FIELD, "file_name", "chunk"]
 # and the most it may be set to.
 DEFAULT_QUERY_TOP_K = 10
 QUERY_TOP_K_LIMIT = 20
+# What starts the line each query logs of the records it returned, as a
+# JSON array of their ids, for quality checks to find them by.
+RETURNED_RECORDS_PREFIX = "Rag records returned: "
 
 
 def utcNow() -> datetime:
@@ -387,7 +391,8 @@ async def queryRag(
     simple rag is searched in Pinecone, which embeds the query the way it
     embedded the chunks, and its closest chunks come back, closest first:
     as many as `queryTopK` says. Chunks saved moments before may not be
-    found yet.
+    found yet. The ids of the records returned are logged, as
+    `searchRag` logs them.
     """
     denied = await checkAccess(accountUuid, projectId)
     if denied is not None:
@@ -398,7 +403,16 @@ async def queryRag(
 async def searchRag(projectId: str, ragId: str, query: str) -> dict:
     """The parts of the project's ready rag that best answer `query`, as
     `queryRag` gives them, with no account to check: as an agent of the
-    project searches its knowledge base."""
+    project searches its knowledge base.
+
+    The ids of the records returned are logged on one line, closest
+    first, for quality checks:
+
+        Rag records returned: ["<ragId>#3", "<ragId>#0"]
+
+    A simple rag's are its chunks' Pinecone ids; a plain text rag's one
+    record is the rag itself, so its id is `ragId`.
+    """
     rag = await fetchProjectRecord(utilities.RAGS, projectId, ragId)
     if rag is None:
         return errorResult(
@@ -420,14 +434,17 @@ async def searchRag(projectId: str, ragId: str, query: str) -> dict:
                 "chunk": None,
             }
         ]
+        recordIds = [ragId]
     else:
         found = await getPineconeDb().search(
             ragId, query, queryTopK(), MATCH_FIELDS
         )
         matches = [matchOf(match) for match in found]
+        recordIds = [match.id for match in found]
     LOGGER.info(
         "Queried rag %s (%s): %s matches.", ragId, strategy, len(matches)
     )
+    LOGGER.info("%s%s", RETURNED_RECORDS_PREFIX, json.dumps(recordIds))
     return {"ragId": ragId, "strategy": strategy, "matches": matches}
 
 
